@@ -25,11 +25,11 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/kasworld/goguelike2/server/g2packet"
 	"github.com/kasworld/log/logflags"
-	"github.com/kasworld/wasmwebsocket/serverlog"
+	"github.com/kasworld/wasmwebsocket/golog"
 	"github.com/kasworld/wasmwebsocket/wspacket"
 )
 
-var gLog = serverlog.New("", logflags.DefaultValue(false), serverlog.LL_All)
+var gLog = golog.New("", logflags.DefaultValue(false), golog.LL_All)
 
 // service const
 const (
