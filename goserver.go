@@ -15,6 +15,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"net/http"
@@ -166,6 +167,17 @@ func (c2sc *WebSocketConnection) HandleRecvPacket(header wspacket.Header, rbody 
 			golog.GlobalLogger.Panic("invalid packet type %s %v", c2sc, header)
 		case 1:
 			golog.GlobalLogger.Debug("recv packet %v %v %v", c2sc, header, rbody)
+			var robj string
+			json.Unmarshal(rbody, &robj)
+			golog.GlobalLogger.Debug("recv packet %v %v %v", c2sc, header, robj)
+
+			rhd := header
+			rhd.PType = wspacket.PT_Response
+			rpk := wspacket.Packet{
+				Header: rhd,
+				Body:   "ack",
+			}
+			c2sc.enqueueSendPacket(rpk)
 		}
 
 	case wspacket.PT_Response:
