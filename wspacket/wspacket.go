@@ -176,20 +176,14 @@ func (pb *RecvPacketBuffer) GetDecompressedBody() ([]byte, error) {
 	return body, nil
 }
 
-func (pb *RecvPacketBuffer) GetHeaderRObj(fn func(ptype uint8, cmd uint16, pdata []byte) (interface{}, error)) (Header, interface{}, error) {
+func (pb *RecvPacketBuffer) GetHeaderBody() (Header, []byte, error) {
+
 	if !pb.IsPacketComplete() {
 		return Header{}, nil, fmt.Errorf("packet not complete")
 	}
 	header := pb.GetHeader()
 	body, err := pb.GetDecompressedBody()
-	if err != nil {
-		return header, nil, err
-	}
-	robj, err := fn(header.PType, header.Cmd, body)
-	if err != nil {
-		return header, nil, err
-	}
-	return header, robj, nil
+	return header, body, err
 }
 
 func (pb *RecvPacketBuffer) IsHeaderComplete() bool {

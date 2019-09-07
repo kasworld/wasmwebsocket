@@ -85,7 +85,7 @@ func serveWebSocketClient(ctx context.Context, w http.ResponseWriter, r *http.Re
 	}()
 
 	c2sc := NewWebSocketConnection(r.RemoteAddr)
-	c2sc.StartWebSocket(ctx, wsConn)
+	c2sc.ServeWebSocketConnection(ctx, wsConn)
 
 	// connected user play
 
@@ -122,36 +122,22 @@ func NewWebSocketConnection(remoteAddr string) *WebSocketConnection {
 	return c2sc
 }
 
-func (c2sc *WebSocketConnection) StartWebSocket(mainctx context.Context, wsConn *websocket.Conn) {
+func (c2sc *WebSocketConnection) ServeWebSocketConnection(mainctx context.Context, wsConn *websocket.Conn) {
 
-	gLog.Debug("Start StartWebSocket %s", c2sc)
-	defer func() { gLog.Debug("End StartWebSocket %s", c2sc) }()
+	gLog.Debug("Start ServeWebSocketConnection %s", c2sc)
+	defer func() { gLog.Debug("End ServeWebSocketConnection %s", c2sc) }()
 
 	sendRecvCtx, sendRecvCancel := context.WithCancel(mainctx)
 	c2sc.sendRecvStop = sendRecvCancel
 
 	go func() {
-		err := RecvLoop(
-			sendRecvCtx,
-			c2sc.sendRecvStop,
-			wsConn,
-			UnmarsharPacket,
-			c2sc.HandleRecvPacket,
-			ServerPacketReadTimeOutSec,
-		)
+		err := RecvLoop(sendRecvCtx, c2sc.sendRecvStop, wsConn, c2sc.HandleRecvPacket)
 		if err != nil {
 			gLog.Error("end RecvLoop %v", err)
 		}
 	}()
 	go func() {
-		err := SendLoop(
-			sendRecvCtx,
-			c2sc.sendRecvStop,
-			wsConn,
-			c2sc.sendCh,
-			c2sc.handleSentPacket,
-			ServerPacketWriteTimeoutSec,
-		)
+		err := SendLoop(sendRecvCtx, c2sc.sendRecvStop, wsConn, c2sc.sendCh, c2sc.handleSentPacket)
 		if err != nil {
 			gLog.Error("end SendLoop %v", err)
 		}
@@ -171,7 +157,7 @@ func (c2sc *WebSocketConnection) handleSentPacket(header wspacket.Header) error 
 	return nil
 }
 
-func (c2sc *WebSocketConnection) HandleRecvPacket(header wspacket.Header, robj interface{}) error {
+func (c2sc *WebSocketConnection) HandleRecvPacket(header wspacket.Header, rbody []byte) error {
 
 	gLog.Debug("Start HandleRecvPacket %v %v", c2sc, header)
 	defer func() {
@@ -245,7 +231,7 @@ func PacketObj2ByteList(pk *wspacket.Packet, buf []byte) (int, error) {
 func SendLoop(sendRecvCtx context.Context, SendRecvStop func(), wsConn *websocket.Conn,
 	SendCh chan wspacket.Packet,
 	handleSentPacket func(header wspacket.Header) error,
-	PacketWriteTimeOut time.Duration) error {
+) error {
 
 	defer SendRecvStop()
 	var err error
@@ -253,10 +239,10 @@ loop:
 	for {
 		select {
 		case <-sendRecvCtx.Done():
-			err = SendControl(wsConn, websocket.CloseMessage, PacketWriteTimeOut)
+			err = SendControl(wsConn, websocket.CloseMessage, ServerPacketWriteTimeoutSec)
 			break loop
 		case pk := <-SendCh:
-			if err = wsConn.SetWriteDeadline(time.Now().Add(PacketWriteTimeOut)); err != nil {
+			if err = wsConn.SetWriteDeadline(time.Now().Add(ServerPacketWriteTimeoutSec)); err != nil {
 				break loop
 			}
 			if err = SendPacket(wsConn, &pk); err != nil {
@@ -270,23 +256,21 @@ loop:
 	return err
 }
 
-func RecvLoop(ctx context.Context, SendRecvStop func(), wsConn *websocket.Conn,
-	UnmarsharPacketFn func(ptype uint8, cmd uint16, pdata []byte) (interface{}, error),
-	HandleRecvPacket func(header wspacket.Header, body interface{}) error,
-	PacketReadTimeOut time.Duration) error {
+func RecvLoop(sendRecvCtx context.Context, SendRecvStop func(), wsConn *websocket.Conn,
+	HandleRecvPacket func(header wspacket.Header, body []byte) error) error {
 
 	defer SendRecvStop()
 	var err error
 loop:
 	for {
 		select {
-		case <-ctx.Done():
+		case <-sendRecvCtx.Done():
 			break loop
 		default:
-			if err = wsConn.SetReadDeadline(time.Now().Add(PacketReadTimeOut)); err != nil {
+			if err = wsConn.SetReadDeadline(time.Now().Add(ServerPacketReadTimeOutSec)); err != nil {
 				break loop
 			}
-			if header, body, lerr := RecvPacket(wsConn, UnmarsharPacketFn); lerr != nil {
+			if header, body, lerr := RecvPacket(wsConn); lerr != nil {
 				if operr, ok := lerr.(*net.OpError); ok && operr.Timeout() {
 					continue
 				}
@@ -302,10 +286,7 @@ loop:
 	return err
 }
 
-func RecvPacket(wsConn *websocket.Conn,
-	UnmarsharPacketFn func(ptype uint8, cmd uint16, pdata []byte) (interface{}, error)) (
-	wspacket.Header, interface{}, error) {
-
+func RecvPacket(wsConn *websocket.Conn) (wspacket.Header, []byte, error) {
 	mt, rdata, err := wsConn.ReadMessage()
 	if err != nil {
 		return wspacket.Header{}, nil, err
@@ -313,9 +294,5 @@ func RecvPacket(wsConn *websocket.Conn,
 	if mt != websocket.BinaryMessage {
 		return wspacket.Header{}, nil, fmt.Errorf("message not binary %v", mt)
 	}
-	return wspacket.NewRecvPacketBufferByData(rdata).GetHeaderRObj(UnmarsharPacketFn)
-}
-
-func UnmarsharPacket(ptype uint8, cmd uint16, pdata []byte) (interface{}, error) {
-	return pdata, nil
+	return wspacket.NewRecvPacketBufferByData(rdata).GetHeaderBody()
 }
