@@ -32,8 +32,8 @@ const (
 	SendBufferSize = 10
 
 	// for client
-	ClientPacketReadTimeoutSec  = 6
-	ClientPacketWriteTimeoutSec = 3
+	PacketReadTimeoutSec  = 6
+	PacketWriteTimeoutSec = 3
 )
 
 func main() {
@@ -92,14 +92,14 @@ func (c2sc *WebSocketConnection) ConnectWebSocket(mainctx context.Context) {
 
 	go func() {
 		err := gorillawebsocketsendrecv.RecvLoop(sendRecvCtx, c2sc.sendRecvStop, wsConn,
-			ClientPacketReadTimeoutSec, c2sc.HandleRecvPacket)
+			PacketReadTimeoutSec, c2sc.HandleRecvPacket)
 		if err != nil {
 			golog.GlobalLogger.Error("end RecvLoop %v", err)
 		}
 	}()
 	go func() {
 		err := gorillawebsocketsendrecv.SendLoop(sendRecvCtx, c2sc.sendRecvStop, wsConn,
-			ClientPacketWriteTimeoutSec, c2sc.sendCh, c2sc.handleSentPacket)
+			PacketWriteTimeoutSec, c2sc.sendCh, c2sc.handleSentPacket)
 		if err != nil {
 			golog.GlobalLogger.Error("end SendLoop %v", err)
 		}
