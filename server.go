@@ -15,6 +15,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"net"
@@ -22,10 +23,10 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/kasworld/goguelike2/server/g2packet"
 	"github.com/kasworld/log/logflags"
 	"github.com/kasworld/wasmwebsocket/serverlog"
 	"github.com/kasworld/wasmwebsocket/wspacket"
-	"github.com/tinylib/msgp/msgp"
 )
 
 var gLog = serverlog.New("", logflags.DefaultValue(false), serverlog.LL_All)
@@ -164,6 +165,17 @@ func (c2sc *WebSocketConnection) HandleRecvPacket(header wspacket.Header, rbody 
 		gLog.Debug("End HandleRecvPacket %v %v", c2sc, header)
 	}()
 
+	switch header.PType {
+	default:
+		gLog.Panic("invalid packet type %s %v", c2sc, header)
+
+	case g2packet.PT_Request:
+
+	case g2packet.PT_Response:
+
+	case g2packet.PT_Notification:
+	}
+
 	return nil
 }
 
@@ -204,7 +216,8 @@ func SendPacket(wsConn *websocket.Conn, sendPk *wspacket.Packet) error {
 
 func PacketObj2ByteList(pk *wspacket.Packet, buf []byte) (int, error) {
 	totalLen := 0
-	bodyData, err := pk.Body.(msgp.Marshaler).MarshalMsg(buf[wspacket.HeaderLen:wspacket.HeaderLen])
+	bodyData, err := json.Marshal(pk.Body)
+	// bodyData, err := pk.Body.(msgp.Marshaler).MarshalMsg(buf[wspacket.HeaderLen:wspacket.HeaderLen])
 	if err != nil {
 		return totalLen, err
 	}
