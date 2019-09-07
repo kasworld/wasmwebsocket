@@ -15,10 +15,8 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
-	"net"
 	"net/url"
 	"time"
 
@@ -26,6 +24,7 @@ import (
 	"github.com/kasworld/goguelike2/server/g2packet"
 	"github.com/kasworld/log/logflags"
 	"github.com/kasworld/wasmwebsocket/golog"
+	"github.com/kasworld/wasmwebsocket/gorillawebsocketsendrecv"
 	"github.com/kasworld/wasmwebsocket/wspacket"
 )
 
@@ -33,13 +32,11 @@ var gLog = golog.New("", logflags.DefaultValue(false), golog.LL_All)
 
 // service const
 const (
-	ServerSendBufferSize        = 10
-	ServerPacketReadTimeOutSec  = 6
-	ServerPacketWriteTimeoutSec = 3
+	ServerSendBufferSize = 10
 
 	// for client
-	ClientReadTimeoutSec  = 6
-	ClientWriteTimeoutSec = 3
+	ClientPacketReadTimeoutSec  = 6
+	ClientPacketWriteTimeoutSec = 3
 )
 
 func main() {
@@ -49,7 +46,7 @@ func main() {
 
 	c2sc := NewWebSocketConnection(*serverurl)
 	ctx := context.Background()
-
+	c2sc.ConnectWebSocket(ctx)
 }
 
 ///////////////////
@@ -86,7 +83,7 @@ func (c2sc *WebSocketConnection) ConnectWebSocket(mainctx context.Context) {
 	defer func() { gLog.Debug("End ConnectWebSocket %s", c2sc) }()
 
 	// connect
-	u := url.URL{Scheme: "ws", Host: connAddr, Path: "/ws"}
+	u := url.URL{Scheme: "ws", Host: c2sc.RemoteAddr, Path: "/ws"}
 	wsConn, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
 	if err != nil {
 		gLog.Error("dial: %v", err)
@@ -97,13 +94,15 @@ func (c2sc *WebSocketConnection) ConnectWebSocket(mainctx context.Context) {
 	c2sc.sendRecvStop = sendRecvCancel
 
 	go func() {
-		err := RecvLoop(sendRecvCtx, c2sc.sendRecvStop, wsConn, c2sc.HandleRecvPacket)
+		err := gorillawebsocketsendrecv.RecvLoop(sendRecvCtx, c2sc.sendRecvStop, wsConn,
+			ClientPacketReadTimeoutSec, c2sc.HandleRecvPacket)
 		if err != nil {
 			gLog.Error("end RecvLoop %v", err)
 		}
 	}()
 	go func() {
-		err := SendLoop(sendRecvCtx, c2sc.sendRecvStop, wsConn, c2sc.sendCh, c2sc.handleSentPacket)
+		err := gorillawebsocketsendrecv.SendLoop(sendRecvCtx, c2sc.sendRecvStop, wsConn,
+			ClientPacketWriteTimeoutSec, c2sc.sendCh, c2sc.handleSentPacket)
 		if err != nil {
 			gLog.Error("end SendLoop %v", err)
 		}
@@ -171,117 +170,4 @@ func (c2sc *WebSocketConnection) enqueueSendPacket(pk wspacket.Packet) error {
 	}
 
 	return fmt.Errorf("Send channel full %v", c2sc)
-}
-
-////////////////////
-
-func SendControl(
-	wsConn *websocket.Conn, mt int, PacketWriteTimeOut time.Duration) error {
-
-	return wsConn.WriteControl(mt, []byte{}, time.Now().Add(PacketWriteTimeOut))
-}
-
-func SendPacket(wsConn *websocket.Conn, sendPk *wspacket.Packet) error {
-	sendBuffer := wspacket.NewSendPacketBuffer()
-	sendN, err := PacketObj2ByteList(sendPk, sendBuffer)
-	if err != nil {
-		return err
-	}
-	return wsConn.WriteMessage(websocket.BinaryMessage, sendBuffer[:sendN])
-}
-
-func PacketObj2ByteList(pk *wspacket.Packet, buf []byte) (int, error) {
-	totalLen := 0
-	bodyData, err := json.Marshal(pk.Body)
-	// bodyData, err := pk.Body.(msgp.Marshaler).MarshalMsg(buf[wspacket.HeaderLen:wspacket.HeaderLen])
-	if err != nil {
-		return totalLen, err
-	}
-	if wspacket.EnableCompress && len(bodyData) > wspacket.CompressLimit {
-		// oldlen := len(bodyData)
-		bodyData, err = wspacket.CompressData(bodyData)
-		if err != nil {
-			return totalLen, err
-		}
-		pk.Header.SetFlag(wspacket.HF_Compress)
-		copy(buf[wspacket.HeaderLen:], bodyData)
-	}
-	bodyLen := len(bodyData)
-	if bodyLen > wspacket.MaxBodyLen {
-		return bodyLen + wspacket.HeaderLen,
-			fmt.Errorf("fail to serialize large packet %v, %v", pk.Header, bodyLen)
-	}
-	pk.Header.BodyLen = uint32(bodyLen)
-	copy(buf, pk.Header.ToBytes())
-	// copy(buf[HeaderLen:], bodyData)
-	return bodyLen + wspacket.HeaderLen, nil
-}
-
-func SendLoop(sendRecvCtx context.Context, SendRecvStop func(), wsConn *websocket.Conn,
-	SendCh chan wspacket.Packet,
-	handleSentPacket func(header wspacket.Header) error,
-) error {
-
-	defer SendRecvStop()
-	var err error
-loop:
-	for {
-		select {
-		case <-sendRecvCtx.Done():
-			err = SendControl(wsConn, websocket.CloseMessage, ServerPacketWriteTimeoutSec)
-			break loop
-		case pk := <-SendCh:
-			if err = wsConn.SetWriteDeadline(time.Now().Add(ServerPacketWriteTimeoutSec)); err != nil {
-				break loop
-			}
-			if err = SendPacket(wsConn, &pk); err != nil {
-				break loop
-			}
-			if err = handleSentPacket(pk.Header); err != nil {
-				break loop
-			}
-		}
-	}
-	return err
-}
-
-func RecvLoop(sendRecvCtx context.Context, SendRecvStop func(), wsConn *websocket.Conn,
-	HandleRecvPacket func(header wspacket.Header, body []byte) error) error {
-
-	defer SendRecvStop()
-	var err error
-loop:
-	for {
-		select {
-		case <-sendRecvCtx.Done():
-			break loop
-		default:
-			if err = wsConn.SetReadDeadline(time.Now().Add(ServerPacketReadTimeOutSec)); err != nil {
-				break loop
-			}
-			if header, body, lerr := RecvPacket(wsConn); lerr != nil {
-				if operr, ok := lerr.(*net.OpError); ok && operr.Timeout() {
-					continue
-				}
-				err = lerr
-				break loop
-			} else {
-				if err = HandleRecvPacket(header, body); err != nil {
-					break loop
-				}
-			}
-		}
-	}
-	return err
-}
-
-func RecvPacket(wsConn *websocket.Conn) (wspacket.Header, []byte, error) {
-	mt, rdata, err := wsConn.ReadMessage()
-	if err != nil {
-		return wspacket.Header{}, nil, err
-	}
-	if mt != websocket.BinaryMessage {
-		return wspacket.Header{}, nil, fmt.Errorf("message not binary %v", mt)
-	}
-	return wspacket.NewRecvPacketBufferByData(rdata).GetHeaderBody()
 }
