@@ -29,7 +29,7 @@ import (
 
 // service const
 const (
-	ServerSendBufferSize = 10
+	SendBufferSize = 10
 
 	ServerPacketReadTimeoutSec  = 6
 	ServerPacketWriteTimeoutSec = 3
@@ -107,7 +107,7 @@ type WebSocketConnection struct {
 func NewWebSocketConnection(remoteAddr string) *WebSocketConnection {
 	c2sc := &WebSocketConnection{
 		RemoteAddr: remoteAddr,
-		sendCh:     make(chan wspacket.Packet, ServerSendBufferSize),
+		sendCh:     make(chan wspacket.Packet, SendBufferSize),
 	}
 
 	c2sc.sendRecvStop = func() {
