@@ -170,10 +170,22 @@ func (c2sc *WebSocketConnection) HandleRecvPacket(header wspacket.Header, rbody 
 		gLog.Panic("invalid packet type %s %v", c2sc, header)
 
 	case g2packet.PT_Request:
+		switch header.Cmd {
+		default:
+			gLog.Panic("invalid packet type %s %v", c2sc, header)
+		}
 
 	case g2packet.PT_Response:
+		switch header.Cmd {
+		default:
+			gLog.Panic("invalid packet type %s %v", c2sc, header)
+		}
 
 	case g2packet.PT_Notification:
+		switch header.Cmd {
+		default:
+			gLog.Panic("invalid packet type %s %v", c2sc, header)
+		}
 	}
 
 	return nil

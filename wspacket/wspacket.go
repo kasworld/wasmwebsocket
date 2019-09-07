@@ -40,7 +40,7 @@ type Packet struct {
 type PacketID uint32
 
 const (
-	PT_Request byte = iota
+	PT_Request byte = iota + 1
 	PT_Response
 	PT_Notification
 )
@@ -107,39 +107,22 @@ func (h Header) String() string {
 	case PT_Request:
 		return fmt.Sprintf(
 			"Header[Req:%v BodyLen:%d PkID:%d Flags:0b%0b Fill:0x%08x]",
-			h.Cmd,
-			h.BodyLen,
-			h.PkID,
-			h.Flags,
-			h.Fill,
+			h.Cmd, h.BodyLen, h.PkID, h.Flags, h.Fill,
 		)
 	case PT_Response:
 		return fmt.Sprintf(
 			"Header[Rsp:%v BodyLen:%d PkID:%d Flags:0b%0b Fill:0x%08x]",
-			h.Cmd,
-			h.BodyLen,
-			h.PkID,
-			h.Flags,
-			h.Fill,
+			h.Cmd, h.BodyLen, h.PkID, h.Flags, h.Fill,
 		)
 	case PT_Notification:
 		return fmt.Sprintf(
 			"Header[Noti:%v BodyLen:%d PkID:%d Flags:0b%0b Fill:0x%08x]",
-			h.Cmd,
-			h.BodyLen,
-			h.PkID,
-			h.Flags,
-			h.Fill,
+			h.Cmd, h.BodyLen, h.PkID, h.Flags, h.Fill,
 		)
 	default:
 		return fmt.Sprintf(
 			"Header[%v:%v BodyLen:%d PkID:%d  Flags:0b%0b Fill:0x%08x]",
-			h.PType,
-			h.Cmd,
-			h.BodyLen,
-			h.PkID,
-			h.Flags,
-			h.Fill,
+			h.PType, h.Cmd, h.BodyLen, h.PkID, h.Flags, h.Fill,
 		)
 	}
 }
