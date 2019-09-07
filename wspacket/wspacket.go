@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	HeaderLen      = 4 + 4 + 2 + 1 + 1
+	HeaderLen      = 4 + 4 + 2 + 1 + 1 + 4
 	MaxBodyLen     = 0xfffff
 	MaxPacketLen   = HeaderLen + MaxBodyLen
 	CompressLimit  = 0xffff
@@ -48,6 +48,7 @@ type Header struct {
 	Cmd     uint16
 	PType   byte
 	Flags   byte
+	Fill    uint32
 }
 
 func MakeHeaderFromBytes(bytes []byte) Header {
@@ -57,6 +58,7 @@ func MakeHeaderFromBytes(bytes []byte) Header {
 	header.Cmd = binary.LittleEndian.Uint16(bytes[8:10])
 	header.PType = bytes[10]
 	header.Flags = bytes[11]
+	header.Fill = binary.LittleEndian.Uint32(bytes[12:16])
 	return header
 }
 
@@ -95,36 +97,40 @@ func (h Header) String() string {
 	switch h.PType {
 	case PT_Request:
 		return fmt.Sprintf(
-			"Header[Req:%v BodyLen:%d PkID:%d  Flags:0b%0b]",
+			"Header[Req:%v BodyLen:%d PkID:%d Flags:0b%0b Fill:0x%08x]",
 			h.Cmd,
 			h.BodyLen,
 			h.PkID,
 			h.Flags,
+			h.Fill,
 		)
 	case PT_Response:
 		return fmt.Sprintf(
-			"Header[Rsp:%v BodyLen:%d PkID:%d Flags:0b%0b]",
+			"Header[Rsp:%v BodyLen:%d PkID:%d Flags:0b%0b Fill:0x%08x]",
 			h.Cmd,
 			h.BodyLen,
 			h.PkID,
 			h.Flags,
+			h.Fill,
 		)
 	case PT_Notification:
 		return fmt.Sprintf(
-			"Header[Noti:%v BodyLen:%d PkID:%d Flags:0b%0b]",
+			"Header[Noti:%v BodyLen:%d PkID:%d Flags:0b%0b Fill:0x%08x]",
 			h.Cmd,
 			h.BodyLen,
 			h.PkID,
 			h.Flags,
+			h.Fill,
 		)
 	default:
 		return fmt.Sprintf(
-			"Header[%v:%v BodyLen:%d PkID:%d  Flags:0b%0b]",
+			"Header[%v:%v BodyLen:%d PkID:%d  Flags:0b%0b Fill:0x%08x]",
 			h.PType,
 			h.Cmd,
 			h.BodyLen,
 			h.PkID,
 			h.Flags,
+			h.Fill,
 		)
 	}
 }
