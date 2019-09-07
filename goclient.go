@@ -31,8 +31,8 @@ const (
 	SendBufferSize = 10
 
 	// for client
-	PacketReadTimeoutSec  = 6
-	PacketWriteTimeoutSec = 3
+	PacketReadTimeoutSec  = 6 * time.Second
+	PacketWriteTimeoutSec = 3 * time.Second
 )
 
 func main() {
@@ -40,9 +40,25 @@ func main() {
 	flag.Parse()
 	fmt.Printf("serverurl %v \n", *serverurl)
 
-	c2sc := NewWebSocketConnection(*serverurl)
 	ctx := context.Background()
+	c2sc := NewWebSocketConnection(*serverurl)
+
+	c2sc.enqueueSendPacket(makePacket())
 	c2sc.ConnectWebSocket(ctx)
+}
+
+func makePacket() wspacket.Packet {
+	body := "hello world!!"
+	hd := wspacket.Header{
+		Cmd:   1,
+		PkID:  1,
+		PType: wspacket.PT_Request,
+	}
+
+	return wspacket.Packet{
+		Header: hd,
+		Body:   body,
+	}
 }
 
 ///////////////////
@@ -135,22 +151,17 @@ func (c2sc *WebSocketConnection) HandleRecvPacket(header wspacket.Header, rbody 
 			golog.GlobalLogger.Panic("invalid packet type %s %v", c2sc, header)
 		}
 	case wspacket.PT_Response:
-		switch header.Cmd {
-		default:
-			golog.GlobalLogger.Panic("invalid packet type %s %v", c2sc, header)
-		}
+		golog.GlobalLogger.Debug("recv packet %v %v %v", c2sc, header, rbody)
 
 	case wspacket.PT_Notification:
-		switch header.Cmd {
-		default:
-			golog.GlobalLogger.Panic("invalid packet type %s %v", c2sc, header)
-		}
+		golog.GlobalLogger.Debug("recv packet %v %v %v", c2sc, header, rbody)
 	}
 
 	return nil
 }
 
 func (c2sc *WebSocketConnection) enqueueSendPacket(pk wspacket.Packet) error {
+	golog.GlobalLogger.Debug("enqueue %v", pk)
 	trycount := 10
 	for trycount > 0 {
 		select {

@@ -40,7 +40,6 @@ func SendPacket(wsConn *websocket.Conn, sendPk *wspacket.Packet) error {
 func PacketObj2ByteList(pk *wspacket.Packet, buf []byte) (int, error) {
 	totalLen := 0
 	bodyData, err := json.Marshal(pk.Body)
-	// bodyData, err := pk.Body.(msgp.Marshaler).MarshalMsg(buf[wspacket.HeaderLen:wspacket.HeaderLen])
 	if err != nil {
 		return totalLen, err
 	}
@@ -51,7 +50,6 @@ func PacketObj2ByteList(pk *wspacket.Packet, buf []byte) (int, error) {
 			return totalLen, err
 		}
 		pk.Header.SetFlag(wspacket.HF_Compress)
-		copy(buf[wspacket.HeaderLen:], bodyData)
 	}
 	bodyLen := len(bodyData)
 	if bodyLen > wspacket.MaxBodyLen {
@@ -60,7 +58,7 @@ func PacketObj2ByteList(pk *wspacket.Packet, buf []byte) (int, error) {
 	}
 	pk.Header.BodyLen = uint32(bodyLen)
 	copy(buf, pk.Header.ToBytes())
-	// copy(buf[HeaderLen:], bodyData)
+	copy(buf[wspacket.HeaderLen:], bodyData)
 	return bodyLen + wspacket.HeaderLen, nil
 }
 

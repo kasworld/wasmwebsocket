@@ -30,8 +30,8 @@ import (
 const (
 	SendBufferSize = 10
 
-	PacketReadTimeoutSec  = 6
-	PacketWriteTimeoutSec = 3
+	PacketReadTimeoutSec  = 6 * time.Second
+	PacketWriteTimeoutSec = 3 * time.Second
 )
 
 func main() {
@@ -73,9 +73,7 @@ func serveWebSocketClient(ctx context.Context, w http.ResponseWriter, r *http.Re
 	}
 
 	golog.GlobalLogger.Debug("Start serveWebSocketClient %v", r.RemoteAddr)
-	defer func() {
-		golog.GlobalLogger.Debug("End serveWebSocketClient %v", r.RemoteAddr)
-	}()
+	defer func() { golog.GlobalLogger.Debug("End serveWebSocketClient %v", r.RemoteAddr) }()
 
 	c2sc := NewWebSocketConnection(r.RemoteAddr)
 	c2sc.ServeWebSocketConnection(ctx, wsConn)
@@ -84,7 +82,6 @@ func serveWebSocketClient(ctx context.Context, w http.ResponseWriter, r *http.Re
 
 	// end play
 	wsConn.Close()
-
 }
 
 ///////////////////
@@ -167,19 +164,15 @@ func (c2sc *WebSocketConnection) HandleRecvPacket(header wspacket.Header, rbody 
 		switch header.Cmd {
 		default:
 			golog.GlobalLogger.Panic("invalid packet type %s %v", c2sc, header)
+		case 1:
+			golog.GlobalLogger.Debug("recv packet %v %v %v", c2sc, header, rbody)
 		}
 
 	case wspacket.PT_Response:
-		switch header.Cmd {
-		default:
-			golog.GlobalLogger.Panic("invalid packet type %s %v", c2sc, header)
-		}
+		golog.GlobalLogger.Debug("recv packet %v %v %v", c2sc, header, rbody)
 
 	case wspacket.PT_Notification:
-		switch header.Cmd {
-		default:
-			golog.GlobalLogger.Panic("invalid packet type %s %v", c2sc, header)
-		}
+		golog.GlobalLogger.Debug("recv packet %v %v %v", c2sc, header, rbody)
 	}
 
 	return nil
