@@ -22,13 +22,10 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/kasworld/goguelike2/server/g2packet"
-	"github.com/kasworld/log/logflags"
 	"github.com/kasworld/wasmwebsocket/golog"
 	"github.com/kasworld/wasmwebsocket/gorillawebsocketsendrecv"
 	"github.com/kasworld/wasmwebsocket/wspacket"
 )
-
-var gLog = golog.New("", logflags.DefaultValue(false), golog.LL_All)
 
 // service const
 const (
@@ -72,13 +69,13 @@ func serveWebSocketClient(ctx context.Context, w http.ResponseWriter, r *http.Re
 
 	wsConn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		gLog.Error("upgrade %v", err)
+		golog.GlobalLogger.Error("upgrade %v", err)
 		return
 	}
 
-	gLog.Debug("Start serveWebSocketClient %v", r.RemoteAddr)
+	golog.GlobalLogger.Debug("Start serveWebSocketClient %v", r.RemoteAddr)
 	defer func() {
-		gLog.Debug("End serveWebSocketClient %v", r.RemoteAddr)
+		golog.GlobalLogger.Debug("End serveWebSocketClient %v", r.RemoteAddr)
 	}()
 
 	c2sc := NewWebSocketConnection(r.RemoteAddr)
@@ -114,15 +111,15 @@ func NewWebSocketConnection(remoteAddr string) *WebSocketConnection {
 	}
 
 	c2sc.sendRecvStop = func() {
-		gLog.Fatal("Too early sendRecvStop call %v", c2sc)
+		golog.GlobalLogger.Fatal("Too early sendRecvStop call %v", c2sc)
 	}
 	return c2sc
 }
 
 func (c2sc *WebSocketConnection) ServeWebSocketConnection(mainctx context.Context, wsConn *websocket.Conn) {
 
-	gLog.Debug("Start ServeWebSocketConnection %s", c2sc)
-	defer func() { gLog.Debug("End ServeWebSocketConnection %s", c2sc) }()
+	golog.GlobalLogger.Debug("Start ServeWebSocketConnection %s", c2sc)
+	defer func() { golog.GlobalLogger.Debug("End ServeWebSocketConnection %s", c2sc) }()
 
 	sendRecvCtx, sendRecvCancel := context.WithCancel(mainctx)
 	c2sc.sendRecvStop = sendRecvCancel
@@ -131,14 +128,14 @@ func (c2sc *WebSocketConnection) ServeWebSocketConnection(mainctx context.Contex
 		err := gorillawebsocketsendrecv.RecvLoop(sendRecvCtx, c2sc.sendRecvStop, wsConn,
 			ServerPacketReadTimeoutSec, c2sc.HandleRecvPacket)
 		if err != nil {
-			gLog.Error("end RecvLoop %v", err)
+			golog.GlobalLogger.Error("end RecvLoop %v", err)
 		}
 	}()
 	go func() {
 		err := gorillawebsocketsendrecv.SendLoop(sendRecvCtx, c2sc.sendRecvStop, wsConn,
 			ServerPacketWriteTimeoutSec, c2sc.sendCh, c2sc.handleSentPacket)
 		if err != nil {
-			gLog.Error("end SendLoop %v", err)
+			golog.GlobalLogger.Error("end SendLoop %v", err)
 		}
 	}()
 
@@ -158,31 +155,31 @@ func (c2sc *WebSocketConnection) handleSentPacket(header wspacket.Header) error 
 
 func (c2sc *WebSocketConnection) HandleRecvPacket(header wspacket.Header, rbody []byte) error {
 
-	gLog.Debug("Start HandleRecvPacket %v %v", c2sc, header)
+	golog.GlobalLogger.Debug("Start HandleRecvPacket %v %v", c2sc, header)
 	defer func() {
-		gLog.Debug("End HandleRecvPacket %v %v", c2sc, header)
+		golog.GlobalLogger.Debug("End HandleRecvPacket %v %v", c2sc, header)
 	}()
 
 	switch header.PType {
 	default:
-		gLog.Panic("invalid packet type %s %v", c2sc, header)
+		golog.GlobalLogger.Panic("invalid packet type %s %v", c2sc, header)
 
 	case g2packet.PT_Request:
 		switch header.Cmd {
 		default:
-			gLog.Panic("invalid packet type %s %v", c2sc, header)
+			golog.GlobalLogger.Panic("invalid packet type %s %v", c2sc, header)
 		}
 
 	case g2packet.PT_Response:
 		switch header.Cmd {
 		default:
-			gLog.Panic("invalid packet type %s %v", c2sc, header)
+			golog.GlobalLogger.Panic("invalid packet type %s %v", c2sc, header)
 		}
 
 	case g2packet.PT_Notification:
 		switch header.Cmd {
 		default:
-			gLog.Panic("invalid packet type %s %v", c2sc, header)
+			golog.GlobalLogger.Panic("invalid packet type %s %v", c2sc, header)
 		}
 	}
 
@@ -198,7 +195,7 @@ func (c2sc *WebSocketConnection) enqueueSendPacket(pk wspacket.Packet) error {
 		default:
 			trycount--
 		}
-		gLog.Warn(
+		golog.GlobalLogger.Warn(
 			"Send delayed, %s send channel busy %v, retry %v",
 			c2sc, len(c2sc.sendCh), 10-trycount)
 		time.Sleep(1 * time.Millisecond)
