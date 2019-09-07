@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/kasworld/goguelike2/server/g2packet"
 	"github.com/kasworld/wasmwebsocket/golog"
 	"github.com/kasworld/wasmwebsocket/gorillawebsocketsendrecv"
 	"github.com/kasworld/wasmwebsocket/wspacket"
@@ -164,19 +163,19 @@ func (c2sc *WebSocketConnection) HandleRecvPacket(header wspacket.Header, rbody 
 	default:
 		golog.GlobalLogger.Panic("invalid packet type %s %v", c2sc, header)
 
-	case g2packet.PT_Request:
+	case wspacket.PT_Request:
 		switch header.Cmd {
 		default:
 			golog.GlobalLogger.Panic("invalid packet type %s %v", c2sc, header)
 		}
 
-	case g2packet.PT_Response:
+	case wspacket.PT_Response:
 		switch header.Cmd {
 		default:
 			golog.GlobalLogger.Panic("invalid packet type %s %v", c2sc, header)
 		}
 
-	case g2packet.PT_Notification:
+	case wspacket.PT_Notification:
 		switch header.Cmd {
 		default:
 			golog.GlobalLogger.Panic("invalid packet type %s %v", c2sc, header)
