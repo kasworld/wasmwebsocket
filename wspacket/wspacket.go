@@ -129,9 +129,9 @@ func (h Header) String() string {
 
 ///////////////
 
-func NewSendPacketBuffer() []byte {
-	return make([]byte, MaxPacketLen)
-}
+// func NewSendPacketBuffer() []byte {
+// 	return make([]byte, MaxPacketLen)
+// }
 
 type RecvPacketBuffer struct {
 	RecvBuffer []byte

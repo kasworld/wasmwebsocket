@@ -18,8 +18,11 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/kasworld/bufferpool"
 	"github.com/kasworld/wasmwebsocket/wspacket"
 )
+
+var pBufferPool = bufferpool.New("PacketBufferPool", wspacket.MaxPacketLen, 100)
 
 func SendControl(
 	wsConn *websocket.Conn, mt int, PacketWriteTimeOut time.Duration) error {
@@ -75,17 +78,22 @@ loop:
 			if err = wsConn.SetWriteDeadline(time.Now().Add(timeout)); err != nil {
 				break loop
 			}
-			sendBuffer := wspacket.NewSendPacketBuffer()
+			// sendBuffer := wspacket.NewSendPacketBuffer()
+			sendBuffer := pBufferPool.Get()
 			sendN, err := Packet2Bytes(&pk, sendBuffer, marshalBodyFn)
 			if err != nil {
+				pBufferPool.Put(sendBuffer)
 				break loop
 			}
 			if err = SendPacket(wsConn, sendBuffer[:sendN]); err != nil {
+				pBufferPool.Put(sendBuffer)
 				break loop
 			}
 			if err = handleSentPacketFn(pk.Header); err != nil {
+				pBufferPool.Put(sendBuffer)
 				break loop
 			}
+			pBufferPool.Put(sendBuffer)
 		}
 	}
 	return err
