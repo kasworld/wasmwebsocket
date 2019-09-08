@@ -138,13 +138,13 @@ type RecvPacketBuffer struct {
 	RecvLen    int
 }
 
-func NewRecvPacketBuffer() *RecvPacketBuffer {
-	pb := &RecvPacketBuffer{
-		RecvBuffer: make([]byte, MaxPacketLen),
-		RecvLen:    0,
-	}
-	return pb
-}
+// func NewRecvPacketBuffer() *RecvPacketBuffer {
+// 	pb := &RecvPacketBuffer{
+// 		RecvBuffer: make([]byte, MaxPacketLen),
+// 		RecvLen:    0,
+// 	}
+// 	return pb
+// }
 
 func NewRecvPacketBufferByData(rdata []byte) *RecvPacketBuffer {
 	pb := &RecvPacketBuffer{
