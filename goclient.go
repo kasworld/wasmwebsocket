@@ -15,6 +15,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"net/url"
@@ -89,6 +90,10 @@ func NewWebSocketConnection(remoteAddr string) *WebSocketConnection {
 	return c2sc
 }
 
+func marshalBodyFn(body interface{}) ([]byte, error) {
+	return json.Marshal(body)
+}
+
 func (c2sc *WebSocketConnection) ConnectWebSocket(mainctx context.Context) {
 
 	golog.GlobalLogger.Debug("Start ConnectWebSocket %s", c2sc)
@@ -114,7 +119,8 @@ func (c2sc *WebSocketConnection) ConnectWebSocket(mainctx context.Context) {
 	}()
 	go func() {
 		err := gorillawebsocketsendrecv.SendLoop(sendRecvCtx, c2sc.sendRecvStop, wsConn,
-			PacketWriteTimeoutSec, c2sc.sendCh, c2sc.handleSentPacket)
+			PacketWriteTimeoutSec, c2sc.sendCh,
+			marshalBodyFn, c2sc.handleSentPacket)
 		if err != nil {
 			golog.GlobalLogger.Error("end SendLoop %v", err)
 		}

@@ -13,7 +13,6 @@ package gorillawebsocketsendrecv
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net"
 	"time"
@@ -28,26 +27,21 @@ func SendControl(
 	return wsConn.WriteControl(mt, []byte{}, time.Now().Add(PacketWriteTimeOut))
 }
 
-func SendPacket(wsConn *websocket.Conn, sendPk *wspacket.Packet) error {
-	sendBuffer := wspacket.NewSendPacketBuffer()
-	sendN, err := PacketObj2ByteList(sendPk, sendBuffer)
-	if err != nil {
-		return err
-	}
-	return wsConn.WriteMessage(websocket.BinaryMessage, sendBuffer[:sendN])
+func SendPacket(wsConn *websocket.Conn, sendBuffer []byte) error {
+	return wsConn.WriteMessage(websocket.BinaryMessage, sendBuffer)
 }
 
-func PacketObj2ByteList(pk *wspacket.Packet, buf []byte) (int, error) {
-	totalLen := 0
-	bodyData, err := json.Marshal(pk.Body)
+func Packet2Bytes(pk *wspacket.Packet, buf []byte,
+	marshalBodyFn func(interface{}) ([]byte, error)) (int, error) {
+	bodyData, err := marshalBodyFn(pk.Body)
 	if err != nil {
-		return totalLen, err
+		return 0, err
 	}
 	if wspacket.EnableCompress && len(bodyData) > wspacket.CompressLimit {
 		// oldlen := len(bodyData)
 		bodyData, err = wspacket.CompressData(bodyData)
 		if err != nil {
-			return totalLen, err
+			return 0, err
 		}
 		pk.Header.SetFlag(wspacket.HF_Compress)
 	}
@@ -65,7 +59,8 @@ func PacketObj2ByteList(pk *wspacket.Packet, buf []byte) (int, error) {
 func SendLoop(sendRecvCtx context.Context, SendRecvStop func(), wsConn *websocket.Conn,
 	timeout time.Duration,
 	SendCh chan wspacket.Packet,
-	handleSentPacket func(header wspacket.Header) error,
+	marshalBodyFn func(interface{}) ([]byte, error),
+	handleSentPacketFn func(header wspacket.Header) error,
 ) error {
 
 	defer SendRecvStop()
@@ -80,10 +75,15 @@ loop:
 			if err = wsConn.SetWriteDeadline(time.Now().Add(timeout)); err != nil {
 				break loop
 			}
-			if err = SendPacket(wsConn, &pk); err != nil {
+			sendBuffer := wspacket.NewSendPacketBuffer()
+			sendN, err := Packet2Bytes(&pk, sendBuffer, marshalBodyFn)
+			if err != nil {
 				break loop
 			}
-			if err = handleSentPacket(pk.Header); err != nil {
+			if err = SendPacket(wsConn, sendBuffer[:sendN]); err != nil {
+				break loop
+			}
+			if err = handleSentPacketFn(pk.Header); err != nil {
 				break loop
 			}
 		}
@@ -93,7 +93,7 @@ loop:
 
 func RecvLoop(sendRecvCtx context.Context, SendRecvStop func(), wsConn *websocket.Conn,
 	timeout time.Duration,
-	HandleRecvPacket func(header wspacket.Header, body []byte) error) error {
+	HandleRecvPacketFn func(header wspacket.Header, body []byte) error) error {
 
 	defer SendRecvStop()
 	var err error
@@ -113,7 +113,7 @@ loop:
 				err = lerr
 				break loop
 			} else {
-				if err = HandleRecvPacket(header, body); err != nil {
+				if err = HandleRecvPacketFn(header, body); err != nil {
 					break loop
 				}
 			}
