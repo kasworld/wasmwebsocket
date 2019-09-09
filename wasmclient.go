@@ -12,9 +12,14 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"syscall/js"
 	"time"
+
+	"github.com/kasworld/wasmwebsocket/logdur"
+	"github.com/kasworld/wasmwebsocket/wspacket"
 )
 
 var done chan struct{}
@@ -40,4 +45,176 @@ func displayFrame() {
 		return
 	}
 	lasttime = thistime
+}
+
+//////////////
+
+type WebsocketConnection struct {
+	conn         js.Value
+	sendRecvStop func()
+	sendCh       chan wspacket.Packet
+}
+
+func NewWebsocketConnection() *WebsocketConnection {
+
+	tc := &WebsocketConnection{
+		sendCh: make(chan wspacket.Packet, 2),
+	}
+
+	tc.sendRecvStop = func() {
+		fmt.Printf("Too early sendRecvStop call %v", tc)
+	}
+	return tc
+}
+
+func (tc *WebsocketConnection) ConnectTo(connAddr string) error {
+	defer fmt.Printf("end %v\n", logdur.New("ConnectTo"))
+
+	tc.conn = js.Global().Get("WebSocket").New(connAddr)
+	fmt.Println(tc.conn)
+	if tc.conn == js.Null() {
+		return fmt.Errorf("fail to connect %v", connAddr)
+	}
+	return nil
+}
+
+func (tc *WebsocketConnection) Cleanup() {
+	defer fmt.Printf("end %v\n", logdur.New("Cleanup"))
+	tc.sendRecvStop()
+}
+
+func (tc *WebsocketConnection) Run(aictx context.Context) error {
+	defer fmt.Printf("end %v\n", logdur.New("Run"))
+
+	connCtx, ctxCancel := context.WithCancel(aictx)
+	tc.sendRecvStop = ctxCancel
+
+	tc.conn.Call("addEventListener", "message", js.FuncOf(tc.handleWebsocketMessage))
+	return WasmSendLoop(
+		connCtx,
+		tc.sendRecvStop,
+		&tc.conn,
+		tc.sendCh,
+		tc.handleSentPacket,
+	)
+}
+
+func WasmSendLoop(sendRecvCtx context.Context,
+	SendRecvStop func(),
+	conn *js.Value,
+	SendCh chan wspacket.Packet,
+	handleSentPacket func(header wspacket.Header) error,
+) error {
+
+	defer fmt.Printf("end %v\n", logdur.New("WasmSendLoop"))
+
+	defer SendRecvStop()
+	var err error
+loop:
+	for {
+		select {
+		case <-sendRecvCtx.Done():
+			break loop
+		case pk := <-SendCh:
+			sendBuffer := make([]byte, wspacket.MaxPacketLen)
+			sendN, err := wspacket.Packet2Bytes(&pk, sendBuffer, marshalBodyFn)
+			if err != nil {
+				return err
+			}
+			if err = wasmSendPacket(conn, sendBuffer[:sendN]); err != nil {
+				break loop
+			}
+			if err = handleSentPacket(pk.Header); err != nil {
+				break loop
+			}
+		}
+	}
+	return err
+}
+
+func marshalBodyFn(body interface{}) ([]byte, error) {
+	return json.Marshal(body)
+}
+
+func wasmSendPacket(conn *js.Value, sendBuffer []byte) error {
+	defer fmt.Printf("end %v\n", logdur.New("wasmSendPacket"))
+
+	sendData := js.Global().Get("Uint8Array").New(len(sendBuffer))
+	js.CopyBytesToJS(sendData, sendBuffer)
+	fmt.Println("conn", *conn, "sendData", sendData)
+	rtn := conn.Call("send", sendData)
+	if rtn != js.Null() {
+		return fmt.Errorf("fail to send %v", rtn)
+	}
+	return nil
+}
+
+func (tc *WebsocketConnection) handleWebsocketMessage(this js.Value, args []js.Value) interface{} {
+	defer fmt.Printf("end %v\n", logdur.New("handleWebsocketMessage"))
+
+	fmt.Println(this, args)
+	evt := args[0]
+	fmt.Println(evt)
+	rdata := make([]byte, wspacket.MaxPacketLen)
+	rlen := js.CopyBytesToGo(rdata, evt.Get("data"))
+	fmt.Println(rdata[:rlen])
+
+	rPk := wspacket.NewRecvPacketBufferByData(rdata[:rlen])
+
+	header, body, lerr := rPk.GetHeaderBody()
+	if lerr != nil {
+		fmt.Println(lerr)
+		return nil
+	} else {
+		if err := tc.handleRecvPacket(header, body); err != nil {
+			fmt.Println(err)
+			return nil
+		}
+	}
+	return nil
+}
+
+func (tc *WebsocketConnection) handleRecvPacket(header wspacket.Header, body []byte) error {
+	defer fmt.Printf("end %v\n", logdur.New("handleRecvPacket"))
+
+	var err error
+	switch header.PType {
+	default:
+		err = fmt.Errorf("invalid packet type %v", header.PType)
+
+	case wspacket.PT_Response:
+
+	case wspacket.PT_Notification:
+
+	}
+
+	if err != nil {
+		tc.sendRecvStop()
+		return err
+	}
+
+	return nil
+}
+
+func (tc *WebsocketConnection) handleSentPacket(header wspacket.Header) error {
+	defer fmt.Printf("end %v\n", logdur.New("handleSentPacket"))
+	return nil
+}
+
+func (tc *WebsocketConnection) enqueueSendPacket(pk wspacket.Packet) error {
+	defer fmt.Printf("end %v\n", logdur.New("enqueueSendPacket"))
+	trycount := 10
+	for trycount > 0 {
+		select {
+		case tc.sendCh <- pk:
+			return nil
+		default:
+			trycount--
+		}
+		fmt.Printf("Send delayed, %s send channel busy %v, retry %v",
+			tc, len(tc.sendCh), 10-trycount)
+		time.Sleep(1 * time.Millisecond)
+	}
+
+	return fmt.Errorf("Send channel full %v", tc)
 }

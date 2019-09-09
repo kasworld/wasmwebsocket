@@ -34,31 +34,6 @@ func SendPacket(wsConn *websocket.Conn, sendBuffer []byte) error {
 	return wsConn.WriteMessage(websocket.BinaryMessage, sendBuffer)
 }
 
-func Packet2Bytes(pk *wspacket.Packet, buf []byte,
-	marshalBodyFn func(interface{}) ([]byte, error)) (int, error) {
-	bodyData, err := marshalBodyFn(pk.Body)
-	if err != nil {
-		return 0, err
-	}
-	if wspacket.EnableCompress && len(bodyData) > wspacket.CompressLimit {
-		// oldlen := len(bodyData)
-		bodyData, err = wspacket.CompressData(bodyData)
-		if err != nil {
-			return 0, err
-		}
-		pk.Header.SetFlag(wspacket.HF_Compress)
-	}
-	bodyLen := len(bodyData)
-	if bodyLen > wspacket.MaxBodyLen {
-		return bodyLen + wspacket.HeaderLen,
-			fmt.Errorf("fail to serialize large packet %v, %v", pk.Header, bodyLen)
-	}
-	pk.Header.BodyLen = uint32(bodyLen)
-	copy(buf, pk.Header.ToBytes())
-	copy(buf[wspacket.HeaderLen:], bodyData)
-	return bodyLen + wspacket.HeaderLen, nil
-}
-
 func SendLoop(sendRecvCtx context.Context, SendRecvStop func(), wsConn *websocket.Conn,
 	timeout time.Duration,
 	SendCh chan wspacket.Packet,
@@ -80,7 +55,7 @@ loop:
 			}
 			// sendBuffer := wspacket.NewSendPacketBuffer()
 			sendBuffer := pBufferPool.Get()
-			sendN, err := Packet2Bytes(&pk, sendBuffer, marshalBodyFn)
+			sendN, err := wspacket.Packet2Bytes(&pk, sendBuffer, marshalBodyFn)
 			if err != nil {
 				pBufferPool.Put(sendBuffer)
 				break loop

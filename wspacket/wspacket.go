@@ -242,3 +242,30 @@ func decompressZlib(src []byte) ([]byte, error) {
 	r.Close()
 	return dst.Bytes(), nil
 }
+
+//////////////
+
+func Packet2Bytes(pk *Packet, buf []byte,
+	marshalBodyFn func(interface{}) ([]byte, error)) (int, error) {
+	bodyData, err := marshalBodyFn(pk.Body)
+	if err != nil {
+		return 0, err
+	}
+	if EnableCompress && len(bodyData) > CompressLimit {
+		// oldlen := len(bodyData)
+		bodyData, err = CompressData(bodyData)
+		if err != nil {
+			return 0, err
+		}
+		pk.Header.SetFlag(HF_Compress)
+	}
+	bodyLen := len(bodyData)
+	if bodyLen > MaxBodyLen {
+		return bodyLen + HeaderLen,
+			fmt.Errorf("fail to serialize large packet %v, %v", pk.Header, bodyLen)
+	}
+	pk.Header.BodyLen = uint32(bodyLen)
+	copy(buf, pk.Header.ToBytes())
+	copy(buf[HeaderLen:], bodyData)
+	return bodyLen + HeaderLen, nil
+}
