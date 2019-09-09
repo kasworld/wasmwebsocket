@@ -14,165 +14,74 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"syscall/js"
 	"time"
 
 	"github.com/kasworld/wasmwebsocket/logdur"
+	"github.com/kasworld/wasmwebsocket/wasmwsconnection"
 	"github.com/kasworld/wasmwebsocket/wspacket"
 )
 
 var done chan struct{}
 
 func main() {
-	tc := NewWebsocketConnection("ws://localhost:8080")
-	err := tc.Connect()
-	fmt.Printf("%v", err)
-
-	js.Global().Call("requestAnimationFrame", js.FuncOf(jsFrame))
-	displayFrame()
+	InitApp()
 	<-done
 }
 
-var lasttime time.Time
+type App struct {
+	wsc      *wasmwsconnection.Connection
+	lasttime time.Time
+	pid      uint32
+}
 
-func jsFrame(js.Value, []js.Value) interface{} {
-	displayFrame()
-	js.Global().Call("requestAnimationFrame", js.FuncOf(jsFrame))
+func InitApp() {
+	app := App{}
+	app.wsc = wasmwsconnection.New("ws://localhost:8080", marshalBodyFn, handleRecvPacket, handleSentPacket)
+	err := app.wsc.Connect()
+	fmt.Printf("%v", err)
+	js.Global().Call("requestAnimationFrame", js.FuncOf(app.jsFrame))
+	app.displayFrame()
+}
+
+func (app *App) jsFrame(js.Value, []js.Value) interface{} {
+	app.displayFrame()
+	js.Global().Call("requestAnimationFrame", js.FuncOf(app.jsFrame))
 	return nil
 }
 
-func displayFrame() {
+func (app *App) displayFrame() {
 	thistime := time.Now()
-	if lasttime.Second() == thistime.Second() {
+	if app.lasttime.Second() == thistime.Second() {
 		return
 	}
-	lasttime = thistime
+	app.lasttime = thistime
 	fmt.Println(thistime)
+	app.wsc.EnqueueSendPacket(app.makePacket())
 }
 
-//////////////
-
-type WebsocketConnection struct {
-	remoteAddr   string
-	conn         js.Value
-	sendRecvStop func()
-	sendCh       chan wspacket.Packet
-}
-
-func (tc *WebsocketConnection) String() string {
-	return fmt.Sprintf("WebsocketConnection[%v SendCh:%v]",
-		tc.remoteAddr, len(tc.sendCh))
-}
-
-func NewWebsocketConnection(connAddr string) *WebsocketConnection {
-	tc := &WebsocketConnection{
-		remoteAddr: connAddr,
-		sendCh:     make(chan wspacket.Packet, 2),
+func (app *App) makePacket() wspacket.Packet {
+	body := "hello world!!"
+	hd := wspacket.Header{
+		Cmd:   1,
+		PkID:  app.pid,
+		PType: wspacket.PT_Request,
 	}
-	tc.sendRecvStop = func() {
-		fmt.Printf("Too early sendRecvStop call %v", tc)
+	app.pid++
+
+	return wspacket.Packet{
+		Header: hd,
+		Body:   body,
 	}
-	return tc
-}
-
-func (tc *WebsocketConnection) Connect() error {
-	defer fmt.Printf("end %v\n", logdur.New("ConnectTo"))
-
-	tc.conn = js.Global().Get("WebSocket").New(tc.remoteAddr)
-	if tc.conn == js.Null() {
-		err := fmt.Errorf("fail to connect %v", tc.remoteAddr)
-		fmt.Printf("%v", err)
-		return err
-	}
-	tc.conn.Call("addEventListener", "message", js.FuncOf(tc.handleWebsocketMessage))
-	connCtx, ctxCancel := context.WithCancel(context.Background())
-	tc.sendRecvStop = ctxCancel
-	go func() {
-		err := WasmSendLoop(connCtx, tc.sendRecvStop, &tc.conn, tc.sendCh, tc.handleSentPacket)
-		if err != nil {
-			fmt.Printf("end SendLoop %v", err)
-		}
-	}()
-	return nil
-}
-
-func WasmSendLoop(sendRecvCtx context.Context, SendRecvStop func(),
-	conn *js.Value, SendCh chan wspacket.Packet,
-	handleSentPacket func(header wspacket.Header) error,
-) error {
-
-	defer fmt.Printf("end %v\n", logdur.New("WasmSendLoop"))
-
-	defer SendRecvStop()
-	var err error
-loop:
-	for {
-		select {
-		case <-sendRecvCtx.Done():
-			break loop
-		case pk := <-SendCh:
-			sendBuffer := make([]byte, wspacket.MaxPacketLen)
-			sendN, err := wspacket.Packet2Bytes(&pk, sendBuffer, marshalBodyFn)
-			if err != nil {
-				break loop
-			}
-			if err = wasmSendPacket(conn, sendBuffer[:sendN]); err != nil {
-				break loop
-			}
-			if err = handleSentPacket(pk.Header); err != nil {
-				break loop
-			}
-		}
-	}
-	return err
 }
 
 func marshalBodyFn(body interface{}) ([]byte, error) {
 	return json.Marshal(body)
 }
 
-func wasmSendPacket(conn *js.Value, sendBuffer []byte) error {
-	defer fmt.Printf("end %v\n", logdur.New("wasmSendPacket"))
-
-	sendData := js.Global().Get("Uint8Array").New(len(sendBuffer))
-	js.CopyBytesToJS(sendData, sendBuffer)
-	fmt.Println("conn", *conn, "sendData", sendData)
-	rtn := conn.Call("send", sendData)
-	if rtn != js.Null() {
-		return fmt.Errorf("fail to send %v", rtn)
-	}
-	return nil
-}
-
-func (tc *WebsocketConnection) handleWebsocketMessage(this js.Value, args []js.Value) interface{} {
-	defer fmt.Printf("end %v\n", logdur.New("handleWebsocketMessage"))
-
-	fmt.Println(this, args)
-	evt := args[0]
-	fmt.Println(evt)
-	rdata := make([]byte, wspacket.MaxPacketLen)
-	rlen := js.CopyBytesToGo(rdata, evt.Get("data"))
-	fmt.Println(rdata[:rlen])
-
-	rPk := wspacket.NewRecvPacketBufferByData(rdata[:rlen])
-
-	header, body, lerr := rPk.GetHeaderBody()
-	if lerr != nil {
-		fmt.Println(lerr)
-		return nil
-	} else {
-		if err := tc.handleRecvPacket(header, body); err != nil {
-			fmt.Println(err)
-			return nil
-		}
-	}
-	return nil
-}
-
-func (tc *WebsocketConnection) handleRecvPacket(header wspacket.Header, body []byte) error {
+func handleRecvPacket(header wspacket.Header, body []byte) error {
 	defer fmt.Printf("end %v\n", logdur.New("handleRecvPacket"))
 
 	var err error
@@ -185,34 +94,10 @@ func (tc *WebsocketConnection) handleRecvPacket(header wspacket.Header, body []b
 	case wspacket.PT_Notification:
 
 	}
-
-	if err != nil {
-		tc.sendRecvStop()
-		return err
-	}
-
-	return nil
+	return err
 }
 
-func (tc *WebsocketConnection) handleSentPacket(header wspacket.Header) error {
+func handleSentPacket(header wspacket.Header) error {
 	defer fmt.Printf("end %v\n", logdur.New("handleSentPacket"))
 	return nil
-}
-
-func (tc *WebsocketConnection) enqueueSendPacket(pk wspacket.Packet) error {
-	defer fmt.Printf("end %v\n", logdur.New("enqueueSendPacket"))
-	trycount := 10
-	for trycount > 0 {
-		select {
-		case tc.sendCh <- pk:
-			return nil
-		default:
-			trycount--
-		}
-		fmt.Printf("Send delayed, %s send channel busy %v, retry %v",
-			tc, len(tc.sendCh), 10-trycount)
-		time.Sleep(1 * time.Millisecond)
-	}
-
-	return fmt.Errorf("Send channel full %v", tc)
 }

@@ -37,8 +37,6 @@ type Packet struct {
 	Body   interface{}
 }
 
-type PacketID uint32
-
 const (
 	PT_Request byte = iota + 1
 	PT_Response
@@ -53,7 +51,7 @@ const (
 
 type Header struct {
 	BodyLen uint32
-	PkID    PacketID
+	PkID    uint32
 	Cmd     uint16
 	PType   byte
 	Flags   byte
@@ -63,7 +61,7 @@ type Header struct {
 func MakeHeaderFromBytes(bytes []byte) Header {
 	var header Header
 	header.BodyLen = binary.LittleEndian.Uint32(bytes[0:4])
-	header.PkID = PacketID(binary.LittleEndian.Uint32(bytes[4:8]))
+	header.PkID = binary.LittleEndian.Uint32(bytes[4:8])
 	header.Cmd = binary.LittleEndian.Uint16(bytes[8:10])
 	header.PType = bytes[10]
 	header.Flags = bytes[11]
