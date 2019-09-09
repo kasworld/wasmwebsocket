@@ -27,6 +27,10 @@ import (
 var done chan struct{}
 
 func main() {
+	tc := NewWebsocketConnection("ws://localhost:8080")
+	err := tc.Connect()
+	fmt.Printf("%v", err)
+
 	js.Global().Call("requestAnimationFrame", js.FuncOf(jsFrame))
 	displayFrame()
 	<-done
@@ -35,22 +39,18 @@ func main() {
 var lasttime time.Time
 
 func jsFrame(js.Value, []js.Value) interface{} {
-	tc := NewWebsocketConnection("ws://localhost:8080")
-	err := tc.Connect()
-	fmt.Printf("%v", err)
-
 	displayFrame()
 	js.Global().Call("requestAnimationFrame", js.FuncOf(jsFrame))
 	return nil
 }
 
 func displayFrame() {
-	fmt.Println("displayFrame")
 	thistime := time.Now()
 	if lasttime.Second() == thistime.Second() {
 		return
 	}
 	lasttime = thistime
+	fmt.Println(thistime)
 }
 
 //////////////
