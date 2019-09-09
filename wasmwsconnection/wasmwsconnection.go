@@ -15,7 +15,6 @@ import (
 	"context"
 	"fmt"
 	"syscall/js"
-	"time"
 
 	"github.com/kasworld/wasmwebsocket/jslog"
 	"github.com/kasworld/wasmwebsocket/logdur"
@@ -66,15 +65,29 @@ func (wsc *Connection) Connect() error {
 		fmt.Printf("%v", err)
 		return err
 	}
-	wsc.conn.Call("addEventListener", "open", js.FuncOf(wsc.connected))
+	wsc.conn.Call("addEventListener", "open", js.FuncOf(wsc.wsOpened))
+	wsc.conn.Call("addEventListener", "close", js.FuncOf(wsc.wsClosed))
+	wsc.conn.Call("addEventListener", "error", js.FuncOf(wsc.wsError))
 	return nil
 }
 
-func (wsc *Connection) connected(js.Value, []js.Value) interface{} {
+func (wsc *Connection) wsOpened(this js.Value, args []js.Value) interface{} {
 	wsc.conn.Call("addEventListener", "message", js.FuncOf(wsc.handleWebsocketMessage))
 	connCtx, ctxCancel := context.WithCancel(context.Background())
 	wsc.sendRecvStop = ctxCancel
 	go wsc.sendLoop(connCtx)
+	return nil
+}
+
+func (wsc *Connection) wsClosed(this js.Value, args []js.Value) interface{} {
+	wsc.sendRecvStop()
+	jslog.Error("ws closed")
+	return nil
+}
+
+func (wsc *Connection) wsError(this js.Value, args []js.Value) interface{} {
+	wsc.sendRecvStop()
+	jslog.Error(this, args)
 	return nil
 }
 
@@ -111,11 +124,8 @@ func (wsc *Connection) sendPacket(sendBuffer []byte) error {
 
 	sendData := js.Global().Get("Uint8Array").New(len(sendBuffer))
 	js.CopyBytesToJS(sendData, sendBuffer)
-	rtn := wsc.conn.Call("send", sendData)
-	if rtn != js.Null() && rtn != js.Undefined() {
-		jslog.Error("conn", wsc.conn, "sendData", sendData)
-		return fmt.Errorf("fail to send %v %v", rtn, sendBuffer)
-	}
+	wsc.conn.Call("send", sendData)
+
 	return nil
 }
 
@@ -159,18 +169,10 @@ func ArrayBufferToSlice(value js.Value) []byte {
 
 func (wsc *Connection) EnqueueSendPacket(pk wspacket.Packet) error {
 	defer fmt.Printf("end %v\n", logdur.New("EnqueueSendPacket"))
-	trycount := 10
-	for trycount > 0 {
-		select {
-		case wsc.sendCh <- pk:
-			return nil
-		default:
-			trycount--
-		}
-		fmt.Printf("Send delayed, %s send channel busy %v, retry %v",
-			wsc, len(wsc.sendCh), 10-trycount)
-		time.Sleep(1 * time.Millisecond)
+	select {
+	case wsc.sendCh <- pk:
+		return nil
+	default:
+		return fmt.Errorf("Send channel full %v", wsc)
 	}
-
-	return fmt.Errorf("Send channel full %v", wsc)
 }

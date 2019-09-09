@@ -60,7 +60,10 @@ func (app *App) displayFrame() {
 	}
 	app.lasttime = thistime
 	fmt.Println(thistime)
-	app.wsc.EnqueueSendPacket(app.makePacket())
+	err := app.wsc.EnqueueSendPacket(app.makePacket())
+	if err != nil {
+		done <- struct{}{}
+	}
 }
 
 func (app *App) makePacket() wspacket.Packet {
