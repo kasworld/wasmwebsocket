@@ -65,6 +65,11 @@ func (wsc *Connection) Connect() error {
 		fmt.Printf("%v", err)
 		return err
 	}
+	wsc.conn.Call("addEventListener", "open", js.FuncOf(wsc.connected))
+	return nil
+}
+
+func (wsc *Connection) connected(js.Value, []js.Value) interface{} {
 	wsc.conn.Call("addEventListener", "message", js.FuncOf(wsc.handleWebsocketMessage))
 	connCtx, ctxCancel := context.WithCancel(context.Background())
 	wsc.sendRecvStop = ctxCancel

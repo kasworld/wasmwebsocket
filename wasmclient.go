@@ -38,10 +38,11 @@ type App struct {
 }
 
 func InitApp() {
+	dst := "ws://localhost:8080/ws"
 	app := App{}
-	app.wsc = wasmwsconnection.New("ws://localhost:8080", marshalBodyFn, handleRecvPacket, handleSentPacket)
+	app.wsc = wasmwsconnection.New(dst, marshalBodyFn, handleRecvPacket, handleSentPacket)
 	err := app.wsc.Connect()
-	fmt.Printf("%v", err)
+	fmt.Printf("%v %v", dst, err)
 	js.Global().Call("requestAnimationFrame", js.FuncOf(app.jsFrame))
 	app.displayFrame()
 }
