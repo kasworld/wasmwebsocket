@@ -17,6 +17,7 @@ import (
 	"syscall/js"
 	"time"
 
+	"github.com/kasworld/wasmwebsocket/jslog"
 	"github.com/kasworld/wasmwebsocket/logdur"
 	"github.com/kasworld/wasmwebsocket/wspacket"
 )
@@ -51,7 +52,7 @@ func New(
 		handleSentPacketFn: handleSentPacketFn,
 	}
 	wsc.sendRecvStop = func() {
-		fmt.Printf("Too early sendRecvStop call %v", wsc)
+		jslog.Log("Too early sendRecvStop call %v", wsc)
 	}
 	return wsc
 }
@@ -62,7 +63,7 @@ func (wsc *Connection) Connect() error {
 	wsc.conn = js.Global().Get("WebSocket").New(wsc.remoteAddr)
 	if wsc.conn == js.Null() {
 		err := fmt.Errorf("fail to connect %v", wsc.remoteAddr)
-		fmt.Printf("%v", err)
+		jslog.Log("%v", err)
 		return err
 	}
 	wsc.conn.Call("addEventListener", "open", js.FuncOf(wsc.connected))
@@ -70,13 +71,14 @@ func (wsc *Connection) Connect() error {
 }
 
 func (wsc *Connection) connected(js.Value, []js.Value) interface{} {
+	// wsc.conn.Set("binaryType", "arraybuffer")
 	wsc.conn.Call("addEventListener", "message", js.FuncOf(wsc.handleWebsocketMessage))
 	connCtx, ctxCancel := context.WithCancel(context.Background())
 	wsc.sendRecvStop = ctxCancel
 	go func() {
 		err := wsc.sendLoop(connCtx)
 		if err != nil {
-			fmt.Printf("end SendLoop %v", err)
+			jslog.Log("end SendLoop %v", err)
 		}
 	}()
 	return nil
@@ -127,12 +129,24 @@ func (wsc *Connection) handleWebsocketMessage(this js.Value, args []js.Value) in
 	defer fmt.Printf("end %v\n", logdur.New("handleWebsocketMessage"))
 
 	fmt.Println(this, args)
-	evt := args[0]
-	fmt.Println(evt)
-	rdata := make([]byte, wspacket.MaxPacketLen)
-	rlen := js.CopyBytesToGo(rdata, evt.Get("data"))
-	fmt.Println(rdata[:rlen])
 
+	jslog.Log("arg0 [%v]\n", args[0])
+	jslog.Log("arg0 data [%v]\n", args[0].Get("data"))
+	jslog.Log("arg0 data len [%v]\n", args[0].Get("data").Get("size"))
+	jslog.Log("arg0 data type [%v]\n", args[0].Get("data").Get("type"))
+
+	// datalen := args[0].Get("data").Get("size").Int()
+	data := args[0].Get("data") // blob
+	jslog.Log("hello", data)
+	// data := js.Global().Get("Uint8Array").New(args[0].Get("data"))
+	// for i := 0; i < datalen; i++ {
+	// 	fmt.Print(data.Index(i))
+	// }
+	jslog.Log("data [%v]\n", data)
+
+	rdata := make([]byte, wspacket.MaxPacketLen)
+	rlen := js.CopyBytesToGo(rdata, data)
+	fmt.Println(rdata[:rlen])
 	rPk := wspacket.NewRecvPacketBufferByData(rdata[:rlen])
 
 	header, body, lerr := rPk.GetHeaderBody()
@@ -159,7 +173,7 @@ func (wsc *Connection) EnqueueSendPacket(pk wspacket.Packet) error {
 		default:
 			trycount--
 		}
-		fmt.Printf("Send delayed, %s send channel busy %v, retry %v",
+		jslog.Log("Send delayed, %s send channel busy %v, retry %v",
 			wsc, len(wsc.sendCh), 10-trycount)
 		time.Sleep(1 * time.Millisecond)
 	}
