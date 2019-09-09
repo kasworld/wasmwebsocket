@@ -85,6 +85,7 @@ func marshalBodyFn(body interface{}) ([]byte, error) {
 func handleRecvPacket(header wspacket.Header, body []byte) error {
 	defer fmt.Printf("end %v\n", logdur.New("handleRecvPacket"))
 
+	fmt.Println(header, body)
 	var err error
 	switch header.PType {
 	default:
