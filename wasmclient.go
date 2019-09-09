@@ -1,3 +1,5 @@
+// +build ignore
+
 // Copyright 2015,2016,2017,2018,2019 SeukWon Kang (kasworld@gmail.com)
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -33,6 +35,10 @@ func main() {
 var lasttime time.Time
 
 func jsFrame(js.Value, []js.Value) interface{} {
+	tc := NewWebsocketConnection("ws://localhost:8080")
+	err := tc.Connect()
+	fmt.Printf("%v", err)
+
 	displayFrame()
 	js.Global().Call("requestAnimationFrame", js.FuncOf(jsFrame))
 	return nil
@@ -50,59 +56,51 @@ func displayFrame() {
 //////////////
 
 type WebsocketConnection struct {
+	remoteAddr   string
 	conn         js.Value
 	sendRecvStop func()
 	sendCh       chan wspacket.Packet
 }
 
-func NewWebsocketConnection() *WebsocketConnection {
+func (tc *WebsocketConnection) String() string {
+	return fmt.Sprintf("WebsocketConnection[%v SendCh:%v]",
+		tc.remoteAddr, len(tc.sendCh))
+}
 
+func NewWebsocketConnection(connAddr string) *WebsocketConnection {
 	tc := &WebsocketConnection{
-		sendCh: make(chan wspacket.Packet, 2),
+		remoteAddr: connAddr,
+		sendCh:     make(chan wspacket.Packet, 2),
 	}
-
 	tc.sendRecvStop = func() {
 		fmt.Printf("Too early sendRecvStop call %v", tc)
 	}
 	return tc
 }
 
-func (tc *WebsocketConnection) ConnectTo(connAddr string) error {
+func (tc *WebsocketConnection) Connect() error {
 	defer fmt.Printf("end %v\n", logdur.New("ConnectTo"))
 
-	tc.conn = js.Global().Get("WebSocket").New(connAddr)
-	fmt.Println(tc.conn)
+	tc.conn = js.Global().Get("WebSocket").New(tc.remoteAddr)
 	if tc.conn == js.Null() {
-		return fmt.Errorf("fail to connect %v", connAddr)
+		err := fmt.Errorf("fail to connect %v", tc.remoteAddr)
+		fmt.Printf("%v", err)
+		return err
 	}
+	tc.conn.Call("addEventListener", "message", js.FuncOf(tc.handleWebsocketMessage))
+	connCtx, ctxCancel := context.WithCancel(context.Background())
+	tc.sendRecvStop = ctxCancel
+	go func() {
+		err := WasmSendLoop(connCtx, tc.sendRecvStop, &tc.conn, tc.sendCh, tc.handleSentPacket)
+		if err != nil {
+			fmt.Printf("end SendLoop %v", err)
+		}
+	}()
 	return nil
 }
 
-func (tc *WebsocketConnection) Cleanup() {
-	defer fmt.Printf("end %v\n", logdur.New("Cleanup"))
-	tc.sendRecvStop()
-}
-
-func (tc *WebsocketConnection) Run(aictx context.Context) error {
-	defer fmt.Printf("end %v\n", logdur.New("Run"))
-
-	connCtx, ctxCancel := context.WithCancel(aictx)
-	tc.sendRecvStop = ctxCancel
-
-	tc.conn.Call("addEventListener", "message", js.FuncOf(tc.handleWebsocketMessage))
-	return WasmSendLoop(
-		connCtx,
-		tc.sendRecvStop,
-		&tc.conn,
-		tc.sendCh,
-		tc.handleSentPacket,
-	)
-}
-
-func WasmSendLoop(sendRecvCtx context.Context,
-	SendRecvStop func(),
-	conn *js.Value,
-	SendCh chan wspacket.Packet,
+func WasmSendLoop(sendRecvCtx context.Context, SendRecvStop func(),
+	conn *js.Value, SendCh chan wspacket.Packet,
 	handleSentPacket func(header wspacket.Header) error,
 ) error {
 
@@ -119,7 +117,7 @@ loop:
 			sendBuffer := make([]byte, wspacket.MaxPacketLen)
 			sendN, err := wspacket.Packet2Bytes(&pk, sendBuffer, marshalBodyFn)
 			if err != nil {
-				return err
+				break loop
 			}
 			if err = wasmSendPacket(conn, sendBuffer[:sendN]); err != nil {
 				break loop
