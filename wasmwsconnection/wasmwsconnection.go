@@ -142,6 +142,7 @@ func (wsc *Connection) handleWebsocketMessage(this js.Value, args []js.Value) in
 			header, body, lerr := rPk.GetHeaderBody()
 			if lerr != nil {
 				fmt.Println(lerr)
+				wsc.sendRecvStop()
 				return nil
 			} else {
 				if err := wsc.handleRecvPacketFn(header, body); err != nil {
@@ -150,7 +151,6 @@ func (wsc *Connection) handleWebsocketMessage(this js.Value, args []js.Value) in
 					return nil
 				}
 			}
-
 			return nil
 		}))
 
