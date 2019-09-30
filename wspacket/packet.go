@@ -192,6 +192,9 @@ func (pb *RecvPacketBuffer) GetDecompressedBody() ([]byte, error) {
 	return body, nil
 }
 
+// GetHeaderBody return header and (decompressed) Body as bytelist
+// application need demux by header.PType, header.Cmd,
+// unmarshal body and check header.PkID(if response packet)
 func (pb *RecvPacketBuffer) GetHeaderBody() (Header, []byte, error) {
 
 	if !pb.IsPacketComplete() {
