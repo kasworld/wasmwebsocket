@@ -59,31 +59,29 @@ const (
 	PT_Notification
 )
 
-// HeaderFlag position type
-type HeaderFlag uint8
-
 const (
-	// HF_Compress is header flag to mark body compressed, read only
-	HF_Compress HeaderFlag = iota
+	// Compress is header flag to mark body compressed, read only
+	CompressNone byte = iota
+	CompressZlib
 )
 
 // Header is fixed size header of packet
 type Header struct {
-	BodyLen uint32 // read only
-	PkID    uint32 // sender set, for PT_Request and PT_Response
-	Cmd     uint16 // sender set, application demux received packet
-	PType   byte   // sender set, PT_Request, PT_Response, PT_Notification
-	Flags   byte   // read only, addtional flag of packet, currently only HF_Compress
-	Fill    uint32 // sender set, any data
+	bodyLen  uint32 // read only
+	PkID     uint32 // sender set, for PT_Request and PT_Response
+	Cmd      uint16 // sender set, application demux received packet
+	PType    byte   // sender set, PT_Request, PT_Response, PT_Notification
+	compress byte   // read only, body Compress state
+	Fill     uint32 // sender set, any data
 }
 
 func MakeHeaderFromBytes(bytes []byte) Header {
 	var header Header
-	header.BodyLen = binary.LittleEndian.Uint32(bytes[0:4])
+	header.bodyLen = binary.LittleEndian.Uint32(bytes[0:4])
 	header.PkID = binary.LittleEndian.Uint32(bytes[4:8])
 	header.Cmd = binary.LittleEndian.Uint16(bytes[8:10])
 	header.PType = bytes[10]
-	header.Flags = bytes[11]
+	header.compress = bytes[11]
 	header.Fill = binary.LittleEndian.Uint32(bytes[12:16])
 	return header
 }
@@ -105,41 +103,35 @@ func (v *Header) GetByteSlice() []byte {
 	return (*[HeaderLen]byte)(unsafe.Pointer(v))[:]
 }
 
-func (v *Header) SetFlag(pos HeaderFlag) {
-	v.Flags |= (1 << pos)
+func (v *Header) BodyLen() uint32 {
+	return v.bodyLen
 }
-func (v *Header) ClearFlag(pos HeaderFlag) {
-	v.Flags &^= (1 << pos)
-}
-func (v *Header) NegFlag(pos HeaderFlag) {
-	v.Flags ^= (1 << pos)
-}
-func (v *Header) GetFlag(pos HeaderFlag) bool {
-	val := v.Flags & (1 << pos)
-	return val != 0
+
+func (v *Header) Compress() byte {
+	return v.compress
 }
 
 func (h Header) String() string {
 	switch h.PType {
 	case PT_Request:
 		return fmt.Sprintf(
-			"Header[Req:%v BodyLen:%d PkID:%d Flags:0b%0b Fill:0x%08x]",
-			h.Cmd, h.BodyLen, h.PkID, h.Flags, h.Fill,
+			"Header[Req:%v bodyLen:%d PkID:%d compress:0b%0b Fill:0x%08x]",
+			h.Cmd, h.bodyLen, h.PkID, h.compress, h.Fill,
 		)
 	case PT_Response:
 		return fmt.Sprintf(
-			"Header[Rsp:%v BodyLen:%d PkID:%d Flags:0b%0b Fill:0x%08x]",
-			h.Cmd, h.BodyLen, h.PkID, h.Flags, h.Fill,
+			"Header[Rsp:%v bodyLen:%d PkID:%d compress:0b%0b Fill:0x%08x]",
+			h.Cmd, h.bodyLen, h.PkID, h.compress, h.Fill,
 		)
 	case PT_Notification:
 		return fmt.Sprintf(
-			"Header[Noti:%v BodyLen:%d PkID:%d Flags:0b%0b Fill:0x%08x]",
-			h.Cmd, h.BodyLen, h.PkID, h.Flags, h.Fill,
+			"Header[Noti:%v bodyLen:%d PkID:%d compress:0b%0b Fill:0x%08x]",
+			h.Cmd, h.bodyLen, h.PkID, h.compress, h.Fill,
 		)
 	default:
 		return fmt.Sprintf(
-			"Header[%v:%v BodyLen:%d PkID:%d  Flags:0b%0b Fill:0x%08x]",
-			h.PType, h.Cmd, h.BodyLen, h.PkID, h.Flags, h.Fill,
+			"Header[%v:%v bodyLen:%d PkID:%d  compress:0b%0b Fill:0x%08x]",
+			h.PType, h.Cmd, h.bodyLen, h.PkID, h.compress, h.Fill,
 		)
 	}
 }
@@ -185,8 +177,8 @@ func (pb *RecvPacketBuffer) GetDecompressedBody() ([]byte, error) {
 		return nil, fmt.Errorf("packet not complete")
 	}
 	header := pb.GetHeader()
-	body := pb.RecvBuffer[HeaderLen : HeaderLen+int(header.BodyLen)]
-	if header.GetFlag(HF_Compress) {
+	body := pb.RecvBuffer[HeaderLen : HeaderLen+int(header.bodyLen)]
+	if header.compress != CompressNone {
 		return DecompressData(body)
 	}
 	return body, nil
@@ -271,7 +263,7 @@ func decompressZlib(src []byte) ([]byte, error) {
 // Packet2Bytes make packet to bytelist with optional compress(by body size and EnableCompress)
 // marshalBodyFn is Packet.Body marshal fuction
 // destBuffer must allocated enough size (MaxPacketLen)
-// set Packet.Header.BodyLen to (compressed) body len
+// set Packet.Header.bodyLen to (compressed) body len
 // return size, error
 func Packet2Bytes(pk *Packet, destBuffer []byte,
 	marshalBodyFn func(interface{}) ([]byte, error)) (int, error) {
@@ -285,14 +277,14 @@ func Packet2Bytes(pk *Packet, destBuffer []byte,
 		if err != nil {
 			return 0, err
 		}
-		pk.Header.SetFlag(HF_Compress)
+		pk.Header.compress = CompressZlib
 	}
 	bodyLen := len(bodyData)
 	if bodyLen > MaxBodyLen {
 		return bodyLen + HeaderLen,
 			fmt.Errorf("fail to serialize large packet %v, %v", pk.Header, bodyLen)
 	}
-	pk.Header.BodyLen = uint32(bodyLen)
+	pk.Header.bodyLen = uint32(bodyLen)
 	copy(destBuffer, pk.Header.ToBytes())
 	copy(destBuffer[HeaderLen:], bodyData)
 	return bodyLen + HeaderLen, nil
