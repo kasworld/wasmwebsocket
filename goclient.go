@@ -53,7 +53,7 @@ func makePacket() wspacket.Packet {
 	hd := wspacket.Header{
 		Cmd:   1,
 		PkID:  1,
-		PType: wspacket.PT_Request,
+		PType: wspacket.Request,
 	}
 
 	return wspacket.Packet{
@@ -151,15 +151,15 @@ func (c2sc *WebSocketConnection) HandleRecvPacket(header wspacket.Header, rbody 
 	default:
 		golog.GlobalLogger.Panic("invalid packet type %s %v", c2sc, header)
 
-	case wspacket.PT_Request:
+	case wspacket.Request:
 		switch header.Cmd {
 		default:
 			golog.GlobalLogger.Panic("invalid packet type %s %v", c2sc, header)
 		}
-	case wspacket.PT_Response:
+	case wspacket.Response:
 		golog.GlobalLogger.Debug("recv packet %v %v %v", c2sc, header, rbody)
 
-	case wspacket.PT_Notification:
+	case wspacket.Notification:
 		golog.GlobalLogger.Debug("recv packet %v %v %v", c2sc, header, rbody)
 	}
 

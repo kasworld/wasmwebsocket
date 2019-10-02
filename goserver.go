@@ -166,7 +166,7 @@ func (c2sc *WebSocketConnection) HandleRecvPacket(header wspacket.Header, rbody 
 	default:
 		golog.GlobalLogger.Panic("invalid packet type %s %v", c2sc, header)
 
-	case wspacket.PT_Request:
+	case wspacket.Request:
 		switch header.Cmd {
 		default:
 			golog.GlobalLogger.Panic("invalid packet type %s %v", c2sc, header)
@@ -177,7 +177,7 @@ func (c2sc *WebSocketConnection) HandleRecvPacket(header wspacket.Header, rbody 
 			golog.GlobalLogger.Debug("recv packet %v %v %v", c2sc, header, robj)
 
 			rhd := header
-			rhd.PType = wspacket.PT_Response
+			rhd.PType = wspacket.Response
 			rpk := wspacket.Packet{
 				Header: rhd,
 				Body:   "ack",
@@ -185,10 +185,10 @@ func (c2sc *WebSocketConnection) HandleRecvPacket(header wspacket.Header, rbody 
 			c2sc.enqueueSendPacket(rpk)
 		}
 
-	case wspacket.PT_Response:
+	case wspacket.Response:
 		golog.GlobalLogger.Debug("recv packet %v %v %v", c2sc, header, rbody)
 
-	case wspacket.PT_Notification:
+	case wspacket.Notification:
 		golog.GlobalLogger.Debug("recv packet %v %v %v", c2sc, header, rbody)
 	}
 

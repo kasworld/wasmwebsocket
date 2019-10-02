@@ -71,7 +71,7 @@ func (app *App) makePacket() wspacket.Packet {
 	hd := wspacket.Header{
 		Cmd:   1,
 		PkID:  app.pid,
-		PType: wspacket.PT_Request,
+		PType: wspacket.Request,
 	}
 	app.pid++
 
@@ -94,9 +94,9 @@ func handleRecvPacket(header wspacket.Header, body []byte) error {
 	default:
 		err = fmt.Errorf("invalid packet type %v", header.PType)
 
-	case wspacket.PT_Response:
+	case wspacket.Response:
 
-	case wspacket.PT_Notification:
+	case wspacket.Notification:
 
 	}
 	return err

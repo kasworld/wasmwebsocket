@@ -17,11 +17,12 @@ import (
 
 func TestHeader_ToBytes(t *testing.T) {
 	hd := Header{
-		Cmd:   3,
-		PkID:  64,
-		PType: 2,
+		Cmd:   0x98,
+		PkID:  0xfe,
+		PType: Notification,
+		Fill:  0x12345678,
 	}
-	bs := hd.ToBytes()
+	bs := hd.toBytes()
 	hd2 := MakeHeaderFromBytes(bs)
 	t.Logf("%v %v %v", hd, bs, hd2)
 }

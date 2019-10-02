@@ -17,24 +17,20 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"unsafe"
 )
 
 const (
 	// MaxBodyLen set to max body len, affect send/recv buffer size
 	MaxBodyLen = 0xfffff
 
-	// EnableCompress enable and body size is over CompressLimit, compress body
-	EnableCompress = false
+	// bodyCompressLimit is limit of uncompressed body size, compressed body can exceed this
+	bodyCompressLimit = 0xffff
 
 	// HeaderLen fixed size of header
 	HeaderLen = 4 + 4 + 2 + 1 + 1 + 4
 
 	// MaxPacketLen max total packet size byte of raw packet
 	MaxPacketLen = HeaderLen + MaxBodyLen
-
-	// CompressLimit is limit of uncompressed body size, compressed body can exceed this
-	CompressLimit = 0xffff
 )
 
 func (pk Packet) String() string {
@@ -49,89 +45,106 @@ type Packet struct {
 
 // packet type
 const (
-	// PT_Request for request packet (response packet expected)
-	PT_Request byte = iota + 1
+	// make not initalized packet error
+	packetTypeError byte = iota
 
-	// PT_Response is reply of request packet
-	PT_Response
+	// Request for request packet (response packet expected)
+	Request
 
-	// PT_Notification is just send and forget packet
-	PT_Notification
+	// Response is reply of request packet
+	Response
+
+	// Notification is just send and forget packet
+	Notification
 )
 
+// Compress is header flag to mark body compressed, read only
 const (
-	// Compress is header flag to mark body compressed, read only
-	CompressNone byte = iota
+	// make not initalized packet error
+	compressError byte = iota
+
+	// body not compressed
+	CompressNone
+
+	// body compressed by zlib
 	CompressZlib
 )
 
 // Header is fixed size header of packet
 type Header struct {
-	bodyLen  uint32 // read only
-	PkID     uint32 // sender set, for PT_Request and PT_Response
-	Cmd      uint16 // sender set, application demux received packet
-	PType    byte   // sender set, PT_Request, PT_Response, PT_Notification
-	compress byte   // read only, body Compress state
-	Fill     uint32 // sender set, any data
+	bodyLen    uint32 // read only
+	PkID       uint32 // sender set, for Request and Response
+	Cmd        uint16 // sender set, application demux received packet
+	PType      byte   // sender set, Request, Response, Notification
+	compressed byte   // read only, body compressed state
+	Fill       uint32 // sender set, any data
 }
 
-func MakeHeaderFromBytes(bytes []byte) Header {
-	var header Header
-	header.bodyLen = binary.LittleEndian.Uint32(bytes[0:4])
-	header.PkID = binary.LittleEndian.Uint32(bytes[4:8])
-	header.Cmd = binary.LittleEndian.Uint16(bytes[8:10])
-	header.PType = bytes[10]
-	header.compress = bytes[11]
-	header.Fill = binary.LittleEndian.Uint32(bytes[12:16])
-	return header
+// MakeHeaderFromBytes unmarshal header from bytelist
+func MakeHeaderFromBytes(buf []byte) Header {
+	var h Header
+	h.bodyLen = binary.LittleEndian.Uint32(buf[0:4])
+	h.PkID = binary.LittleEndian.Uint32(buf[4:8])
+	h.Cmd = binary.LittleEndian.Uint16(buf[8:10])
+	h.PType = buf[10]
+	h.compressed = buf[11]
+	h.Fill = binary.LittleEndian.Uint32(buf[12:16])
+	return h
 }
 
-func GetBodyLenFromHeaderBytes(bytes []byte) uint32 {
-	return binary.LittleEndian.Uint32(bytes[0:4])
+// GetBodyLenFromHeaderBytes return packet body len from bytelist of header
+func GetBodyLenFromHeaderBytes(buf []byte) uint32 {
+	return binary.LittleEndian.Uint32(buf[0:4])
 }
 
-func (v Header) ToBytes() []byte {
-	buf := new(bytes.Buffer)
-	err := binary.Write(buf, binary.LittleEndian, v)
-	if err != nil {
-		fmt.Println("binary.Write failed:", err)
-	}
-	return buf.Bytes()
+// toBytes marshal header to bytelist
+func (h Header) toBytes() []byte {
+	buf := make([]byte, HeaderLen)
+	binary.LittleEndian.PutUint32(buf[0:4], h.bodyLen)
+	binary.LittleEndian.PutUint32(buf[4:8], h.PkID)
+	binary.LittleEndian.PutUint16(buf[8:10], h.Cmd)
+	buf[10] = h.PType
+	buf[11] = h.compressed
+	binary.LittleEndian.PutUint32(buf[12:16], h.Fill)
+	return buf
 }
 
-func (v *Header) GetByteSlice() []byte {
-	return (*[HeaderLen]byte)(unsafe.Pointer(v))[:]
+// BodyLen return bodylen field
+func (h *Header) BodyLen() uint32 {
+	return h.bodyLen
 }
 
-func (v *Header) BodyLen() uint32 {
-	return v.bodyLen
-}
+// Compress return compressed field
+// func (h *Header) Compress() byte {
+// 	return h.compressed
+// }
 
-func (v *Header) Compress() byte {
-	return v.compress
+// IsCompressed return is body compressed
+func (h *Header) IsCompressed() bool {
+	return h.compressed == CompressZlib
 }
 
 func (h Header) String() string {
 	switch h.PType {
-	case PT_Request:
+	case Request:
 		return fmt.Sprintf(
-			"Header[Req:%v bodyLen:%d PkID:%d compress:0b%0b Fill:0x%08x]",
-			h.Cmd, h.bodyLen, h.PkID, h.compress, h.Fill,
+			"Header[Req:%v bodyLen:%d PkID:%d Compress:%v Fill:0x%08x]",
+			h.Cmd, h.bodyLen, h.PkID, h.IsCompressed(), h.Fill,
 		)
-	case PT_Response:
+	case Response:
 		return fmt.Sprintf(
-			"Header[Rsp:%v bodyLen:%d PkID:%d compress:0b%0b Fill:0x%08x]",
-			h.Cmd, h.bodyLen, h.PkID, h.compress, h.Fill,
+			"Header[Rsp:%v bodyLen:%d PkID:%d Compress:%v Fill:0x%08x]",
+			h.Cmd, h.bodyLen, h.PkID, h.IsCompressed(), h.Fill,
 		)
-	case PT_Notification:
+	case Notification:
 		return fmt.Sprintf(
-			"Header[Noti:%v bodyLen:%d PkID:%d compress:0b%0b Fill:0x%08x]",
-			h.Cmd, h.bodyLen, h.PkID, h.compress, h.Fill,
+			"Header[Noti:%v bodyLen:%d PkID:%d Compress:%v Fill:0x%08x]",
+			h.Cmd, h.bodyLen, h.PkID, h.IsCompressed(), h.Fill,
 		)
 	default:
 		return fmt.Sprintf(
-			"Header[%v:%v bodyLen:%d PkID:%d  compress:0b%0b Fill:0x%08x]",
-			h.PType, h.Cmd, h.bodyLen, h.PkID, h.compress, h.Fill,
+			"Header[%v:%v bodyLen:%d PkID:%d Compress:%v Fill:0x%08x]",
+			h.PType, h.Cmd, h.bodyLen, h.PkID, h.IsCompressed(), h.Fill,
 		)
 	}
 }
@@ -156,6 +169,7 @@ type RecvPacketBuffer struct {
 	RecvLen    int
 }
 
+// NewRecvPacketBufferByData make RecvPacketBuffer by exist data
 func NewRecvPacketBufferByData(rdata []byte) *RecvPacketBuffer {
 	pb := &RecvPacketBuffer{
 		RecvBuffer: rdata,
@@ -164,6 +178,8 @@ func NewRecvPacketBufferByData(rdata []byte) *RecvPacketBuffer {
 	return pb
 }
 
+// GetHeader make header and return
+// if data is insufficent, return empty header
 func (pb *RecvPacketBuffer) GetHeader() Header {
 	if !pb.IsHeaderComplete() {
 		return Header{}
@@ -172,14 +188,16 @@ func (pb *RecvPacketBuffer) GetHeader() Header {
 	return header
 }
 
+// GetDecompressedBody return body ready to unmarshal.
+// if body is compressed, decompress and return
 func (pb *RecvPacketBuffer) GetDecompressedBody() ([]byte, error) {
 	if !pb.IsPacketComplete() {
 		return nil, fmt.Errorf("packet not complete")
 	}
 	header := pb.GetHeader()
 	body := pb.RecvBuffer[HeaderLen : HeaderLen+int(header.bodyLen)]
-	if header.compress != CompressNone {
-		return DecompressData(body)
+	if header.compressed == CompressZlib {
+		return decompressZlib(body)
 	}
 	return body, nil
 }
@@ -197,10 +215,12 @@ func (pb *RecvPacketBuffer) GetHeaderBody() (Header, []byte, error) {
 	return header, body, err
 }
 
+// IsHeaderComplete check recv data is sufficient for header
 func (pb *RecvPacketBuffer) IsHeaderComplete() bool {
 	return pb.RecvLen >= HeaderLen
 }
 
+// IsPacketComplete check recv data is sufficient for packet
 func (pb *RecvPacketBuffer) IsPacketComplete() bool {
 	if !pb.IsHeaderComplete() {
 		return false
@@ -209,6 +229,7 @@ func (pb *RecvPacketBuffer) IsPacketComplete() bool {
 	return pb.RecvLen == HeaderLen+int(bodylen)
 }
 
+// NeedRecvLen return need data len for header or body
 func (pb *RecvPacketBuffer) NeedRecvLen() int {
 	if !pb.IsHeaderComplete() {
 		return HeaderLen
@@ -232,12 +253,6 @@ func (pb *RecvPacketBuffer) Read(conn io.Reader) error {
 
 /////////////////
 
-// CompressData can changed to other compress function
-var CompressData = compressZlib
-
-// DecompressData can changed to other compress function
-var DecompressData = decompressZlib
-
 func compressZlib(src []byte) ([]byte, error) {
 	var b bytes.Buffer
 	w, err := zlib.NewWriterLevel(&b, zlib.BestSpeed)
@@ -260,32 +275,38 @@ func decompressZlib(src []byte) ([]byte, error) {
 	return dst.Bytes(), nil
 }
 
-// Packet2Bytes make packet to bytelist with optional compress(by body size and EnableCompress)
-// marshalBodyFn is Packet.Body marshal fuction
-// destBuffer must allocated enough size (MaxPacketLen)
+// Packet2Bytes make packet to bytelist with compress(by bodyCompressLimit)
+// marshalBodyFn is Packet.Body marshal function
+// destBuffer must be allocated with enough size (MaxPacketLen)
 // set Packet.Header.bodyLen to (compressed) body len
-// return size, error
+// return copied size, error
 func Packet2Bytes(pk *Packet, destBuffer []byte,
 	marshalBodyFn func(interface{}) ([]byte, error)) (int, error) {
 
+	if len(destBuffer) < HeaderLen {
+		return 0, fmt.Errorf("insufficient destBuffer %v < %v", len(destBuffer), HeaderLen)
+	}
 	bodyData, err := marshalBodyFn(pk.Body)
 	if err != nil {
 		return 0, err
 	}
-	if EnableCompress && len(bodyData) > CompressLimit {
-		bodyData, err = CompressData(bodyData)
+	if len(bodyData) > bodyCompressLimit {
+		bodyData, err = compressZlib(bodyData)
 		if err != nil {
 			return 0, err
 		}
-		pk.Header.compress = CompressZlib
+		pk.Header.compressed = CompressZlib
 	}
 	bodyLen := len(bodyData)
 	if bodyLen > MaxBodyLen {
-		return bodyLen + HeaderLen,
+		return 0,
 			fmt.Errorf("fail to serialize large packet %v, %v", pk.Header, bodyLen)
 	}
 	pk.Header.bodyLen = uint32(bodyLen)
-	copy(destBuffer, pk.Header.ToBytes())
-	copy(destBuffer[HeaderLen:], bodyData)
-	return bodyLen + HeaderLen, nil
+	copylen := copy(destBuffer, pk.Header.toBytes())
+	copylen += copy(destBuffer[HeaderLen:], bodyData)
+	if copylen != bodyLen+HeaderLen {
+		return copylen, fmt.Errorf("insufficient destBuffer %v != %v", copylen, bodyLen+HeaderLen)
+	}
+	return copylen, nil
 }
