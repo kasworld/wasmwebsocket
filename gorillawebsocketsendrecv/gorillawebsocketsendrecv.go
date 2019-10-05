@@ -37,7 +37,7 @@ func SendPacket(wsConn *websocket.Conn, sendBuffer []byte) error {
 func SendLoop(sendRecvCtx context.Context, SendRecvStop func(), wsConn *websocket.Conn,
 	timeout time.Duration,
 	SendCh chan wspacket.Packet,
-	marshalBodyFn func(interface{}) ([]byte, error),
+	marshalBodyFn func(body interface{}, oldBuffToAppend []byte) ([]byte, byte, error),
 	handleSentPacketFn func(header wspacket.Header) error,
 ) error {
 
@@ -53,22 +53,17 @@ loop:
 			if err = wsConn.SetWriteDeadline(time.Now().Add(timeout)); err != nil {
 				break loop
 			}
-			// sendBuffer := wspacket.NewSendPacketBuffer()
-			sendBuffer := pBufferPool.Get()
-			sendN, err := wspacket.Packet2Bytes(&pk, sendBuffer, marshalBodyFn)
+			var sendBuffer []byte
+			sendBuffer, err := wspacket.Packet2Bytes(&pk, marshalBodyFn)
 			if err != nil {
-				pBufferPool.Put(sendBuffer)
 				break loop
 			}
-			if err = SendPacket(wsConn, sendBuffer[:sendN]); err != nil {
-				pBufferPool.Put(sendBuffer)
+			if err = SendPacket(wsConn, sendBuffer); err != nil {
 				break loop
 			}
 			if err = handleSentPacketFn(pk.Header); err != nil {
-				pBufferPool.Put(sendBuffer)
 				break loop
 			}
-			pBufferPool.Put(sendBuffer)
 		}
 	}
 	return err

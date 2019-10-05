@@ -12,19 +12,29 @@
 package wspacket
 
 import (
-	"bytes"
-	"compress/zlib"
 	"encoding/binary"
 	"fmt"
 	"io"
 )
 
+// packet flow type
+const (
+	// make not initalized packet error
+	packetTypeError byte = iota
+
+	// Request for request packet (response packet expected)
+	Request
+
+	// Response is reply of request packet
+	Response
+
+	// Notification is just send and forget packet
+	Notification
+)
+
 const (
 	// MaxBodyLen set to max body len, affect send/recv buffer size
 	MaxBodyLen = 0xfffff
-
-	// bodyCompressLimit is limit of uncompressed body size, compressed body can exceed this
-	bodyCompressLimit = 0xffff
 
 	// HeaderLen fixed size of header
 	HeaderLen = 4 + 4 + 2 + 1 + 1 + 4
@@ -43,51 +53,24 @@ type Packet struct {
 	Body   interface{}
 }
 
-// packet type
-const (
-	// make not initalized packet error
-	packetTypeError byte = iota
-
-	// Request for request packet (response packet expected)
-	Request
-
-	// Response is reply of request packet
-	Response
-
-	// Notification is just send and forget packet
-	Notification
-)
-
-// Compress is header flag to mark body compressed, read only
-const (
-	// make not initalized packet error
-	compressError byte = iota
-
-	// body not compressed
-	CompressNone
-
-	// body compressed by zlib
-	CompressZlib
-)
-
 // Header is fixed size header of packet
 type Header struct {
-	bodyLen    uint32 // read only
-	PkID       uint32 // sender set, for Request and Response
-	Cmd        uint16 // sender set, application demux received packet
-	PType      byte   // sender set, Request, Response, Notification
-	compressed byte   // read only, body compressed state
-	Fill       uint32 // sender set, any data
+	bodyLen  uint32 // read only
+	ID       uint32 // sender set, unique id per packet (wrap around reuse)
+	Cmd      uint16 // sender set, application demux received packet
+	FlowType byte   // sender set, flow control, Request, Response, Notification
+	BodyType byte   // at marshal(Packet2Bytes) set, body compress, marshal type
+	Fill     uint32 // sender set, any data
 }
 
 // MakeHeaderFromBytes unmarshal header from bytelist
 func MakeHeaderFromBytes(buf []byte) Header {
 	var h Header
 	h.bodyLen = binary.LittleEndian.Uint32(buf[0:4])
-	h.PkID = binary.LittleEndian.Uint32(buf[4:8])
+	h.ID = binary.LittleEndian.Uint32(buf[4:8])
 	h.Cmd = binary.LittleEndian.Uint16(buf[8:10])
-	h.PType = buf[10]
-	h.compressed = buf[11]
+	h.FlowType = buf[10]
+	h.BodyType = buf[11]
 	h.Fill = binary.LittleEndian.Uint32(buf[12:16])
 	return h
 }
@@ -97,16 +80,25 @@ func GetBodyLenFromHeaderBytes(buf []byte) uint32 {
 	return binary.LittleEndian.Uint32(buf[0:4])
 }
 
-// toBytes marshal header to bytelist
-func (h Header) toBytes() []byte {
+// ToByteList marshal header to bytelist
+func (h Header) ToByteList() []byte {
 	buf := make([]byte, HeaderLen)
 	binary.LittleEndian.PutUint32(buf[0:4], h.bodyLen)
-	binary.LittleEndian.PutUint32(buf[4:8], h.PkID)
+	binary.LittleEndian.PutUint32(buf[4:8], h.ID)
 	binary.LittleEndian.PutUint16(buf[8:10], h.Cmd)
-	buf[10] = h.PType
-	buf[11] = h.compressed
+	buf[10] = h.FlowType
+	buf[11] = h.BodyType
 	binary.LittleEndian.PutUint32(buf[12:16], h.Fill)
 	return buf
+}
+
+func (h Header) toBytesAt(buf []byte) {
+	binary.LittleEndian.PutUint32(buf[0:4], h.bodyLen)
+	binary.LittleEndian.PutUint32(buf[4:8], h.ID)
+	binary.LittleEndian.PutUint16(buf[8:10], h.Cmd)
+	buf[10] = h.FlowType
+	buf[11] = h.BodyType
+	binary.LittleEndian.PutUint32(buf[12:16], h.Fill)
 }
 
 // BodyLen return bodylen field
@@ -114,39 +106,10 @@ func (h *Header) BodyLen() uint32 {
 	return h.bodyLen
 }
 
-// Compress return compressed field
-// func (h *Header) Compress() byte {
-// 	return h.compressed
-// }
-
-// IsCompressed return is body compressed
-func (h *Header) IsCompressed() bool {
-	return h.compressed == CompressZlib
-}
-
 func (h Header) String() string {
-	switch h.PType {
-	case Request:
-		return fmt.Sprintf(
-			"Header[Req:%v bodyLen:%d PkID:%d Compress:%v Fill:0x%08x]",
-			h.Cmd, h.bodyLen, h.PkID, h.IsCompressed(), h.Fill,
-		)
-	case Response:
-		return fmt.Sprintf(
-			"Header[Rsp:%v bodyLen:%d PkID:%d Compress:%v Fill:0x%08x]",
-			h.Cmd, h.bodyLen, h.PkID, h.IsCompressed(), h.Fill,
-		)
-	case Notification:
-		return fmt.Sprintf(
-			"Header[Noti:%v bodyLen:%d PkID:%d Compress:%v Fill:0x%08x]",
-			h.Cmd, h.bodyLen, h.PkID, h.IsCompressed(), h.Fill,
-		)
-	default:
-		return fmt.Sprintf(
-			"Header[%v:%v bodyLen:%d PkID:%d Compress:%v Fill:0x%08x]",
-			h.PType, h.Cmd, h.bodyLen, h.PkID, h.IsCompressed(), h.Fill,
-		)
-	}
+	return fmt.Sprintf(
+		"Header[%d:%d ID:%d bodyLen:%d Compress:%v Fill:%d]",
+		h.FlowType, h.Cmd, h.ID, h.bodyLen, h.BodyType, h.Fill)
 }
 
 ///////////////
@@ -188,30 +151,27 @@ func (pb *RecvPacketBuffer) GetHeader() Header {
 	return header
 }
 
-// GetDecompressedBody return body ready to unmarshal.
-// if body is compressed, decompress and return
-func (pb *RecvPacketBuffer) GetDecompressedBody() ([]byte, error) {
+// GetBodyBytes return body ready to unmarshal.
+// if body is BodyType, decompress and return
+func (pb *RecvPacketBuffer) GetBodyBytes() ([]byte, error) {
 	if !pb.IsPacketComplete() {
 		return nil, fmt.Errorf("packet not complete")
 	}
 	header := pb.GetHeader()
 	body := pb.RecvBuffer[HeaderLen : HeaderLen+int(header.bodyLen)]
-	if header.compressed == CompressZlib {
-		return decompressZlib(body)
-	}
 	return body, nil
 }
 
-// GetHeaderBody return header and (decompressed) Body as bytelist
-// application need demux by header.PType, header.Cmd,
-// unmarshal body and check header.PkID(if response packet)
+// GetHeaderBody return header and Body as bytelist
+// application need demux by header.FlowType, header.Cmd
+// unmarshal body with header.BodyType
+// and check header.ID(if response packet)
 func (pb *RecvPacketBuffer) GetHeaderBody() (Header, []byte, error) {
-
 	if !pb.IsPacketComplete() {
 		return Header{}, nil, fmt.Errorf("packet not complete")
 	}
 	header := pb.GetHeader()
-	body, err := pb.GetDecompressedBody()
+	body, err := pb.GetBodyBytes()
 	return header, body, err
 }
 
@@ -251,62 +211,22 @@ func (pb *RecvPacketBuffer) Read(conn io.Reader) error {
 	return nil
 }
 
-/////////////////
-
-func compressZlib(src []byte) ([]byte, error) {
-	var b bytes.Buffer
-	w, err := zlib.NewWriterLevel(&b, zlib.BestSpeed)
+// Packet2Bytes make packet to bytelist
+// marshalBodyFn append marshaled(+compress) body to buffer and return total buffer, BodyType, error
+// set Packet.Header.bodyLen, Packet.Header.BodyType
+// return bytelist, error
+func Packet2Bytes(pk *Packet, marshalBodyFn func(interface{}, []byte) ([]byte, byte, error)) ([]byte, error) {
+	newbuf, bodytype, err := marshalBodyFn(pk.Body, make([]byte, HeaderLen, MaxPacketLen))
 	if err != nil {
 		return nil, err
 	}
-	w.Write(src)
-	w.Close()
-	return b.Bytes(), nil
-}
-
-func decompressZlib(src []byte) ([]byte, error) {
-	r, err := zlib.NewReader(bytes.NewBuffer(src))
-	if err != nil {
-		return nil, err
-	}
-	var dst bytes.Buffer
-	io.Copy(&dst, r)
-	r.Close()
-	return dst.Bytes(), nil
-}
-
-// Packet2Bytes make packet to bytelist with compress(by bodyCompressLimit)
-// marshalBodyFn is Packet.Body marshal function
-// destBuffer must be allocated with enough size (MaxPacketLen)
-// set Packet.Header.bodyLen to (compressed) body len
-// return copied size, error
-func Packet2Bytes(pk *Packet, destBuffer []byte,
-	marshalBodyFn func(interface{}) ([]byte, error)) (int, error) {
-
-	if len(destBuffer) < HeaderLen {
-		return 0, fmt.Errorf("insufficient destBuffer %v < %v", len(destBuffer), HeaderLen)
-	}
-	bodyData, err := marshalBodyFn(pk.Body)
-	if err != nil {
-		return 0, err
-	}
-	if len(bodyData) > bodyCompressLimit {
-		bodyData, err = compressZlib(bodyData)
-		if err != nil {
-			return 0, err
-		}
-		pk.Header.compressed = CompressZlib
-	}
-	bodyLen := len(bodyData)
+	bodyLen := len(newbuf) - HeaderLen
 	if bodyLen > MaxBodyLen {
-		return 0,
+		return nil,
 			fmt.Errorf("fail to serialize large packet %v, %v", pk.Header, bodyLen)
 	}
+	pk.Header.BodyType = bodytype
 	pk.Header.bodyLen = uint32(bodyLen)
-	copylen := copy(destBuffer, pk.Header.toBytes())
-	copylen += copy(destBuffer[HeaderLen:], bodyData)
-	if copylen != bodyLen+HeaderLen {
-		return copylen, fmt.Errorf("insufficient destBuffer %v != %v", copylen, bodyLen+HeaderLen)
-	}
-	return copylen, nil
+	pk.Header.toBytesAt(newbuf)
+	return newbuf, nil
 }

@@ -25,6 +25,7 @@ import (
 	"github.com/kasworld/wasmwebsocket/golog"
 	"github.com/kasworld/wasmwebsocket/gorillawebsocketsendrecv"
 	"github.com/kasworld/wasmwebsocket/wspacket"
+	"github.com/tinylib/msgp/msgp"
 )
 
 // service const
@@ -113,10 +114,6 @@ func NewWebSocketConnection(remoteAddr string) *WebSocketConnection {
 	return c2sc
 }
 
-func marshalBodyFn(body interface{}) ([]byte, error) {
-	return json.Marshal(body)
-}
-
 func (c2sc *WebSocketConnection) ServeWebSocketConnection(mainctx context.Context, wsConn *websocket.Conn) {
 
 	golog.GlobalLogger.Debug("Start ServeWebSocketConnection %s", c2sc)
@@ -155,6 +152,14 @@ func (c2sc *WebSocketConnection) handleSentPacket(header wspacket.Header) error 
 	return nil
 }
 
+// marshal body and append to oldBufferToAppend
+// and return newbuffer, body type(marshaltype,compress,encryption), error
+func marshalBodyFn(body interface{}, oldBuffToAppend []byte) ([]byte, byte, error) {
+	// optional compress, encryption here
+	newBuffer, err := body.(msgp.Marshaler).MarshalMsg(oldBuffToAppend)
+	return newBuffer, 0, err
+}
+
 func (c2sc *WebSocketConnection) HandleRecvPacket(header wspacket.Header, rbody []byte) error {
 
 	golog.GlobalLogger.Debug("Start HandleRecvPacket %v %v", c2sc, header)
@@ -162,7 +167,7 @@ func (c2sc *WebSocketConnection) HandleRecvPacket(header wspacket.Header, rbody 
 		golog.GlobalLogger.Debug("End HandleRecvPacket %v %v", c2sc, header)
 	}()
 
-	switch header.PType {
+	switch header.FlowType {
 	default:
 		golog.GlobalLogger.Panic("invalid packet type %s %v", c2sc, header)
 
@@ -177,7 +182,7 @@ func (c2sc *WebSocketConnection) HandleRecvPacket(header wspacket.Header, rbody 
 			golog.GlobalLogger.Debug("recv packet %v %v %v", c2sc, header, robj)
 
 			rhd := header
-			rhd.PType = wspacket.Response
+			rhd.FlowType = wspacket.Response
 			rpk := wspacket.Packet{
 				Header: rhd,
 				Body:   "ack",

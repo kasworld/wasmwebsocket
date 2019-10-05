@@ -27,7 +27,7 @@ type Connection struct {
 	sendRecvStop func()
 	sendCh       chan wspacket.Packet
 
-	marshalBodyFn      func(interface{}) ([]byte, error)
+	marshalBodyFn      func(body interface{}, oldBuffToAppend []byte) ([]byte, byte, error)
 	handleRecvPacketFn func(header wspacket.Header, body []byte) error
 	handleSentPacketFn func(header wspacket.Header) error
 }
@@ -39,7 +39,7 @@ func (wsc *Connection) String() string {
 
 func New(
 	connAddr string,
-	marshalBodyFn func(interface{}) ([]byte, error),
+	marshalBodyFn func(body interface{}, oldBuffToAppend []byte) ([]byte, byte, error),
 	handleRecvPacketFn func(header wspacket.Header, body []byte) error,
 	handleSentPacketFn func(header wspacket.Header) error,
 ) *Connection {
@@ -101,13 +101,12 @@ loop:
 		case <-sendRecvCtx.Done():
 			break loop
 		case pk := <-wsc.sendCh:
-			sendBuffer := make([]byte, wspacket.MaxPacketLen)
-			sendN := 0
-			sendN, err = wspacket.Packet2Bytes(&pk, sendBuffer, wsc.marshalBodyFn)
+			var sendBuffer []byte
+			sendBuffer, err = wspacket.Packet2Bytes(&pk, wsc.marshalBodyFn)
 			if err != nil {
 				break loop
 			}
-			if err = wsc.sendPacket(sendBuffer[:sendN]); err != nil {
+			if err = wsc.sendPacket(sendBuffer); err != nil {
 				break loop
 			}
 			if err = wsc.handleSentPacketFn(pk.Header); err != nil {

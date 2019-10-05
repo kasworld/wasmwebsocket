@@ -14,7 +14,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"syscall/js"
 	"time"
@@ -22,6 +21,7 @@ import (
 	"github.com/kasworld/wasmwebsocket/logdur"
 	"github.com/kasworld/wasmwebsocket/wasmwsconnection"
 	"github.com/kasworld/wasmwebsocket/wspacket"
+	"github.com/tinylib/msgp/msgp"
 )
 
 var done chan struct{}
@@ -69,9 +69,9 @@ func (app *App) displayFrame() {
 func (app *App) makePacket() wspacket.Packet {
 	body := "hello world!!"
 	hd := wspacket.Header{
-		Cmd:   1,
-		PkID:  app.pid,
-		PType: wspacket.Request,
+		Cmd:      1,
+		ID:       app.pid,
+		FlowType: wspacket.Request,
 	}
 	app.pid++
 
@@ -81,8 +81,12 @@ func (app *App) makePacket() wspacket.Packet {
 	}
 }
 
-func marshalBodyFn(body interface{}) ([]byte, error) {
-	return json.Marshal(body)
+// marshal body and append to oldBufferToAppend
+// and return newbuffer, body type(marshaltype,compress,encryption), error
+func marshalBodyFn(body interface{}, oldBuffToAppend []byte) ([]byte, byte, error) {
+	// optional compress, encryption here
+	newBuffer, err := body.(msgp.Marshaler).MarshalMsg(oldBuffToAppend)
+	return newBuffer, 0, err
 }
 
 func handleRecvPacket(header wspacket.Header, body []byte) error {
@@ -90,9 +94,9 @@ func handleRecvPacket(header wspacket.Header, body []byte) error {
 
 	fmt.Println(header, body)
 	var err error
-	switch header.PType {
+	switch header.FlowType {
 	default:
-		err = fmt.Errorf("invalid packet type %v", header.PType)
+		err = fmt.Errorf("invalid packet type %v", header.FlowType)
 
 	case wspacket.Response:
 
