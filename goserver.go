@@ -25,7 +25,6 @@ import (
 	"github.com/kasworld/wasmwebsocket/golog"
 	"github.com/kasworld/wasmwebsocket/gorillawebsocketsendrecv"
 	"github.com/kasworld/wasmwebsocket/wspacket"
-	"github.com/tinylib/msgp/msgp"
 )
 
 // service const
@@ -155,9 +154,13 @@ func (c2sc *WebSocketConnection) handleSentPacket(header wspacket.Header) error 
 // marshal body and append to oldBufferToAppend
 // and return newbuffer, body type(marshaltype,compress,encryption), error
 func marshalBodyFn(body interface{}, oldBuffToAppend []byte) ([]byte, byte, error) {
-	// optional compress, encryption here
-	newBuffer, err := body.(msgp.Marshaler).MarshalMsg(oldBuffToAppend)
+	var newBuffer []byte
+	mdata, err := json.Marshal(body)
+	if err == nil {
+		newBuffer = append(oldBuffToAppend, mdata...)
+	}
 	return newBuffer, 0, err
+	// optional compress, encryption here
 }
 
 func (c2sc *WebSocketConnection) HandleRecvPacket(header wspacket.Header, rbody []byte) error {

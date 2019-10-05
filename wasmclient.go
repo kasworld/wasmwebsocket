@@ -14,6 +14,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"syscall/js"
 	"time"
@@ -21,7 +22,6 @@ import (
 	"github.com/kasworld/wasmwebsocket/logdur"
 	"github.com/kasworld/wasmwebsocket/wasmwsconnection"
 	"github.com/kasworld/wasmwebsocket/wspacket"
-	"github.com/tinylib/msgp/msgp"
 )
 
 var done chan struct{}
@@ -84,8 +84,12 @@ func (app *App) makePacket() wspacket.Packet {
 // marshal body and append to oldBufferToAppend
 // and return newbuffer, body type(marshaltype,compress,encryption), error
 func marshalBodyFn(body interface{}, oldBuffToAppend []byte) ([]byte, byte, error) {
+	var newBuffer []byte
+	mdata, err := json.Marshal(body)
+	if err == nil {
+		newBuffer = append(oldBuffToAppend, mdata...)
+	}
 	// optional compress, encryption here
-	newBuffer, err := body.(msgp.Marshaler).MarshalMsg(oldBuffToAppend)
 	return newBuffer, 0, err
 }
 
