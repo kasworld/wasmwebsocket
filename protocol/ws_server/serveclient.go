@@ -86,12 +86,6 @@ func (c2sc *ServeClientConn) handleSentPacket(header ws_packet.Header) error {
 }
 
 func (c2sc *ServeClientConn) HandleRecvPacket(header ws_packet.Header, rbody []byte) error {
-
-	golog.GlobalLogger.Debug("Start HandleRecvPacket %v %v", c2sc, header)
-	defer func() {
-		golog.GlobalLogger.Debug("End HandleRecvPacket %v %v", c2sc, header)
-	}()
-
 	robj, err := ws_json.UnmarshalPacket(header, rbody)
 	if err != nil {
 		return err

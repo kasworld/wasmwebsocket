@@ -47,6 +47,7 @@ func main() {
 	c2sc := NewWebSocketConnection(*serverurl)
 
 	c2sc.enqueueSendPacket(c2sc.makePacket())
+	c2sc.enqueueSendPacket(c2sc.makePacket())
 	c2sc.ConnectWebSocket(ctx)
 }
 
@@ -142,12 +143,15 @@ func (c2sc *WebSocketConnection) handleSentPacket(header ws_packet.Header) error
 
 func (c2sc *WebSocketConnection) HandleRecvPacket(header ws_packet.Header, body []byte) error {
 	robj, err := ws_json.UnmarshalPacket(header, body)
-	fmt.Println(header, robj, err)
+	_ = robj
+	// fmt.Println(header, robj, err)
+	if err == nil {
+		c2sc.enqueueSendPacket(c2sc.makePacket())
+	}
 	return err
 }
 
 func (c2sc *WebSocketConnection) enqueueSendPacket(pk ws_packet.Packet) error {
-	golog.GlobalLogger.Debug("enqueue %v", pk)
 	trycount := 10
 	for trycount > 0 {
 		select {
