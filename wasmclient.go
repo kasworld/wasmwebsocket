@@ -14,12 +14,15 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"syscall/js"
 	"time"
 
-	"github.com/kasworld/wasmwebsocket/logdur"
+	"github.com/kasworld/wasmwebsocket/protocol/ws_obj"
+
+	"github.com/kasworld/wasmwebsocket/protocol/ws_idcmd"
+
+	"github.com/kasworld/wasmwebsocket/protocol/ws_json"
 	"github.com/kasworld/wasmwebsocket/protocol/ws_packet"
 	"github.com/kasworld/wasmwebsocket/wasmwsconnection"
 )
@@ -40,7 +43,7 @@ type App struct {
 func InitApp() {
 	dst := "ws://localhost:8080/ws"
 	app := App{}
-	app.wsc = wasmwsconnection.New(dst, marshalBodyFn, handleRecvPacket, handleSentPacket)
+	app.wsc = wasmwsconnection.New(dst, ws_json.MarshalBodyFn, handleRecvPacket, handleSentPacket)
 	err := app.wsc.Connect()
 	fmt.Printf("%v %v", dst, err)
 	js.Global().Call("requestAnimationFrame", js.FuncOf(app.jsFrame))
@@ -67,9 +70,9 @@ func (app *App) displayFrame() {
 }
 
 func (app *App) makePacket() ws_packet.Packet {
-	body := "hello world!!"
+	body := ws_obj.ReqHeartbeat_data{}
 	hd := ws_packet.Header{
-		Cmd:      1,
+		Cmd:      uint16(ws_idcmd.Heartbeat),
 		ID:       app.pid,
 		FlowType: ws_packet.Request,
 	}
@@ -81,36 +84,12 @@ func (app *App) makePacket() ws_packet.Packet {
 	}
 }
 
-// marshal body and append to oldBufferToAppend
-// and return newbuffer, body type(marshaltype,compress,encryption), error
-func marshalBodyFn(body interface{}, oldBuffToAppend []byte) ([]byte, byte, error) {
-	var newBuffer []byte
-	mdata, err := json.Marshal(body)
-	if err == nil {
-		newBuffer = append(oldBuffToAppend, mdata...)
-	}
-	// optional compress, encryption here
-	return newBuffer, 0, err
-}
-
 func handleRecvPacket(header ws_packet.Header, body []byte) error {
-	defer fmt.Printf("end %v\n", logdur.New("handleRecvPacket"))
-
-	fmt.Println(header, body)
-	var err error
-	switch header.FlowType {
-	default:
-		err = fmt.Errorf("invalid packet type %v", header.FlowType)
-
-	case ws_packet.Response:
-
-	case ws_packet.Notification:
-
-	}
+	robj, err := ws_json.UnmarshalPacket(header, body)
+	fmt.Println(header, robj, err)
 	return err
 }
 
 func handleSentPacket(header ws_packet.Header) error {
-	defer fmt.Printf("end %v\n", logdur.New("handleSentPacket"))
 	return nil
 }

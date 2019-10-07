@@ -15,7 +15,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"net/url"
@@ -24,6 +23,9 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/kasworld/wasmwebsocket/golog"
 	"github.com/kasworld/wasmwebsocket/gorillawebsocketsendrecv"
+	"github.com/kasworld/wasmwebsocket/protocol/ws_idcmd"
+	"github.com/kasworld/wasmwebsocket/protocol/ws_json"
+	"github.com/kasworld/wasmwebsocket/protocol/ws_obj"
 	"github.com/kasworld/wasmwebsocket/protocol/ws_packet"
 )
 
@@ -44,22 +46,8 @@ func main() {
 	ctx := context.Background()
 	c2sc := NewWebSocketConnection(*serverurl)
 
-	c2sc.enqueueSendPacket(makePacket())
+	c2sc.enqueueSendPacket(c2sc.makePacket())
 	c2sc.ConnectWebSocket(ctx)
-}
-
-func makePacket() ws_packet.Packet {
-	body := "hello world!!"
-	hd := ws_packet.Header{
-		Cmd:      1,
-		ID:       1,
-		FlowType: ws_packet.Request,
-	}
-
-	return ws_packet.Packet{
-		Header: hd,
-		Body:   body,
-	}
 }
 
 ///////////////////
@@ -76,6 +64,22 @@ type WebSocketConnection struct {
 	RemoteAddr   string
 	sendCh       chan ws_packet.Packet
 	sendRecvStop func()
+	pid          uint32
+}
+
+func (c2sc *WebSocketConnection) makePacket() ws_packet.Packet {
+	body := ws_obj.ReqHeartbeat_data{}
+	hd := ws_packet.Header{
+		Cmd:      uint16(ws_idcmd.Heartbeat),
+		ID:       c2sc.pid,
+		FlowType: ws_packet.Request,
+	}
+	c2sc.pid++
+
+	return ws_packet.Packet{
+		Header: hd,
+		Body:   body,
+	}
 }
 
 func NewWebSocketConnection(remoteAddr string) *WebSocketConnection {
@@ -116,7 +120,7 @@ func (c2sc *WebSocketConnection) ConnectWebSocket(mainctx context.Context) {
 	go func() {
 		err := gorillawebsocketsendrecv.SendLoop(sendRecvCtx, c2sc.sendRecvStop, wsConn,
 			PacketWriteTimeoutSec, c2sc.sendCh,
-			marshalBodyFn, c2sc.handleSentPacket)
+			ws_json.MarshalBodyFn, c2sc.handleSentPacket)
 		if err != nil {
 			golog.GlobalLogger.Error("end SendLoop %v", err)
 		}
@@ -136,42 +140,10 @@ func (c2sc *WebSocketConnection) handleSentPacket(header ws_packet.Header) error
 	return nil
 }
 
-// marshal body and append to oldBufferToAppend
-// and return newbuffer, body type(marshaltype,compress,encryption), error
-func marshalBodyFn(body interface{}, oldBuffToAppend []byte) ([]byte, byte, error) {
-	var newBuffer []byte
-	mdata, err := json.Marshal(body)
-	if err == nil {
-		newBuffer = append(oldBuffToAppend, mdata...)
-	}
-	return newBuffer, 0, err
-	// optional compress, encryption here
-}
-
-func (c2sc *WebSocketConnection) HandleRecvPacket(header ws_packet.Header, rbody []byte) error {
-
-	golog.GlobalLogger.Debug("Start HandleRecvPacket %v %v", c2sc, header)
-	defer func() {
-		golog.GlobalLogger.Debug("End HandleRecvPacket %v %v", c2sc, header)
-	}()
-
-	switch header.FlowType {
-	default:
-		golog.GlobalLogger.Panic("invalid packet type %s %v", c2sc, header)
-
-	case ws_packet.Request:
-		switch header.Cmd {
-		default:
-			golog.GlobalLogger.Panic("invalid packet type %s %v", c2sc, header)
-		}
-	case ws_packet.Response:
-		golog.GlobalLogger.Debug("recv packet %v %v %v", c2sc, header, rbody)
-
-	case ws_packet.Notification:
-		golog.GlobalLogger.Debug("recv packet %v %v %v", c2sc, header, rbody)
-	}
-
-	return nil
+func (c2sc *WebSocketConnection) HandleRecvPacket(header ws_packet.Header, body []byte) error {
+	robj, err := ws_json.UnmarshalPacket(header, body)
+	fmt.Println(header, robj, err)
+	return err
 }
 
 func (c2sc *WebSocketConnection) enqueueSendPacket(pk ws_packet.Packet) error {
