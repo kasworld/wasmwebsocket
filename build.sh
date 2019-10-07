@@ -4,6 +4,10 @@
 echo "gen log"
 loggen -leveldatafile gologlevel.data -packagename golog 
 
+cd protocol 
+./gen.sh
+cd ..
+
 echo "build wasm client"
 rm www/wasmwebsocket.wasm
 GOOS=js GOARCH=wasm go build -o www/wasmwebsocket.wasm wasmclient.go

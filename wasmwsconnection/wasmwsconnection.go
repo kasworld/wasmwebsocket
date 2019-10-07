@@ -18,18 +18,18 @@ import (
 
 	"github.com/kasworld/wasmwebsocket/jslog"
 	"github.com/kasworld/wasmwebsocket/logdur"
-	"github.com/kasworld/wasmwebsocket/wspacket"
+	"github.com/kasworld/wasmwebsocket/protocol/ws_packet"
 )
 
 type Connection struct {
 	remoteAddr   string
 	conn         js.Value
 	sendRecvStop func()
-	sendCh       chan wspacket.Packet
+	sendCh       chan ws_packet.Packet
 
 	marshalBodyFn      func(body interface{}, oldBuffToAppend []byte) ([]byte, byte, error)
-	handleRecvPacketFn func(header wspacket.Header, body []byte) error
-	handleSentPacketFn func(header wspacket.Header) error
+	handleRecvPacketFn func(header ws_packet.Header, body []byte) error
+	handleSentPacketFn func(header ws_packet.Header) error
 }
 
 func (wsc *Connection) String() string {
@@ -40,12 +40,12 @@ func (wsc *Connection) String() string {
 func New(
 	connAddr string,
 	marshalBodyFn func(body interface{}, oldBuffToAppend []byte) ([]byte, byte, error),
-	handleRecvPacketFn func(header wspacket.Header, body []byte) error,
-	handleSentPacketFn func(header wspacket.Header) error,
+	handleRecvPacketFn func(header ws_packet.Header, body []byte) error,
+	handleSentPacketFn func(header ws_packet.Header) error,
 ) *Connection {
 	wsc := &Connection{
 		remoteAddr:         connAddr,
-		sendCh:             make(chan wspacket.Packet, 10),
+		sendCh:             make(chan ws_packet.Packet, 10),
 		marshalBodyFn:      marshalBodyFn,
 		handleRecvPacketFn: handleRecvPacketFn,
 		handleSentPacketFn: handleSentPacketFn,
@@ -102,7 +102,7 @@ loop:
 			break loop
 		case pk := <-wsc.sendCh:
 			var sendBuffer []byte
-			sendBuffer, err = wspacket.Packet2Bytes(&pk, wsc.marshalBodyFn)
+			sendBuffer, err = ws_packet.Packet2Bytes(&pk, wsc.marshalBodyFn)
 			if err != nil {
 				break loop
 			}
@@ -137,7 +137,7 @@ func (wsc *Connection) handleWebsocketMessage(this js.Value, args []js.Value) in
 		js.FuncOf(func(this js.Value, args []js.Value) interface{} {
 
 			rdata := ArrayBufferToSlice(args[0])
-			rPk := wspacket.NewRecvPacketBufferByData(rdata)
+			rPk := ws_packet.NewRecvPacketBufferByData(rdata)
 			header, body, lerr := rPk.GetHeaderBody()
 			if lerr != nil {
 				fmt.Println(lerr)
@@ -166,7 +166,7 @@ func ArrayBufferToSlice(value js.Value) []byte {
 	return Uint8ArrayToSlice(js.Global().Get("Uint8Array").New(value))
 }
 
-func (wsc *Connection) EnqueueSendPacket(pk wspacket.Packet) error {
+func (wsc *Connection) EnqueueSendPacket(pk ws_packet.Packet) error {
 	defer fmt.Printf("end %v\n", logdur.New("EnqueueSendPacket"))
 	select {
 	case wsc.sendCh <- pk:

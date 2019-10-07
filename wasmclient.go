@@ -20,8 +20,8 @@ import (
 	"time"
 
 	"github.com/kasworld/wasmwebsocket/logdur"
+	"github.com/kasworld/wasmwebsocket/protocol/ws_packet"
 	"github.com/kasworld/wasmwebsocket/wasmwsconnection"
-	"github.com/kasworld/wasmwebsocket/wspacket"
 )
 
 var done chan struct{}
@@ -66,16 +66,16 @@ func (app *App) displayFrame() {
 	}
 }
 
-func (app *App) makePacket() wspacket.Packet {
+func (app *App) makePacket() ws_packet.Packet {
 	body := "hello world!!"
-	hd := wspacket.Header{
+	hd := ws_packet.Header{
 		Cmd:      1,
 		ID:       app.pid,
-		FlowType: wspacket.Request,
+		FlowType: ws_packet.Request,
 	}
 	app.pid++
 
-	return wspacket.Packet{
+	return ws_packet.Packet{
 		Header: hd,
 		Body:   body,
 	}
@@ -93,7 +93,7 @@ func marshalBodyFn(body interface{}, oldBuffToAppend []byte) ([]byte, byte, erro
 	return newBuffer, 0, err
 }
 
-func handleRecvPacket(header wspacket.Header, body []byte) error {
+func handleRecvPacket(header ws_packet.Header, body []byte) error {
 	defer fmt.Printf("end %v\n", logdur.New("handleRecvPacket"))
 
 	fmt.Println(header, body)
@@ -102,15 +102,15 @@ func handleRecvPacket(header wspacket.Header, body []byte) error {
 	default:
 		err = fmt.Errorf("invalid packet type %v", header.FlowType)
 
-	case wspacket.Response:
+	case ws_packet.Response:
 
-	case wspacket.Notification:
+	case ws_packet.Notification:
 
 	}
 	return err
 }
 
-func handleSentPacket(header wspacket.Header) error {
+func handleSentPacket(header ws_packet.Header) error {
 	defer fmt.Printf("end %v\n", logdur.New("handleSentPacket"))
 	return nil
 }

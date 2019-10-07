@@ -24,7 +24,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/kasworld/wasmwebsocket/golog"
 	"github.com/kasworld/wasmwebsocket/gorillawebsocketsendrecv"
-	"github.com/kasworld/wasmwebsocket/wspacket"
+	"github.com/kasworld/wasmwebsocket/protocol/ws_packet"
 )
 
 // service const
@@ -48,15 +48,15 @@ func main() {
 	c2sc.ConnectWebSocket(ctx)
 }
 
-func makePacket() wspacket.Packet {
+func makePacket() ws_packet.Packet {
 	body := "hello world!!"
-	hd := wspacket.Header{
+	hd := ws_packet.Header{
 		Cmd:      1,
 		ID:       1,
-		FlowType: wspacket.Request,
+		FlowType: ws_packet.Request,
 	}
 
-	return wspacket.Packet{
+	return ws_packet.Packet{
 		Header: hd,
 		Body:   body,
 	}
@@ -74,14 +74,14 @@ func (c2sc *WebSocketConnection) String() string {
 
 type WebSocketConnection struct {
 	RemoteAddr   string
-	sendCh       chan wspacket.Packet
+	sendCh       chan ws_packet.Packet
 	sendRecvStop func()
 }
 
 func NewWebSocketConnection(remoteAddr string) *WebSocketConnection {
 	c2sc := &WebSocketConnection{
 		RemoteAddr: remoteAddr,
-		sendCh:     make(chan wspacket.Packet, SendBufferSize),
+		sendCh:     make(chan ws_packet.Packet, SendBufferSize),
 	}
 
 	c2sc.sendRecvStop = func() {
@@ -132,7 +132,7 @@ loop:
 	}
 }
 
-func (c2sc *WebSocketConnection) handleSentPacket(header wspacket.Header) error {
+func (c2sc *WebSocketConnection) handleSentPacket(header ws_packet.Header) error {
 	return nil
 }
 
@@ -148,7 +148,7 @@ func marshalBodyFn(body interface{}, oldBuffToAppend []byte) ([]byte, byte, erro
 	// optional compress, encryption here
 }
 
-func (c2sc *WebSocketConnection) HandleRecvPacket(header wspacket.Header, rbody []byte) error {
+func (c2sc *WebSocketConnection) HandleRecvPacket(header ws_packet.Header, rbody []byte) error {
 
 	golog.GlobalLogger.Debug("Start HandleRecvPacket %v %v", c2sc, header)
 	defer func() {
@@ -159,22 +159,22 @@ func (c2sc *WebSocketConnection) HandleRecvPacket(header wspacket.Header, rbody 
 	default:
 		golog.GlobalLogger.Panic("invalid packet type %s %v", c2sc, header)
 
-	case wspacket.Request:
+	case ws_packet.Request:
 		switch header.Cmd {
 		default:
 			golog.GlobalLogger.Panic("invalid packet type %s %v", c2sc, header)
 		}
-	case wspacket.Response:
+	case ws_packet.Response:
 		golog.GlobalLogger.Debug("recv packet %v %v %v", c2sc, header, rbody)
 
-	case wspacket.Notification:
+	case ws_packet.Notification:
 		golog.GlobalLogger.Debug("recv packet %v %v %v", c2sc, header, rbody)
 	}
 
 	return nil
 }
 
-func (c2sc *WebSocketConnection) enqueueSendPacket(pk wspacket.Packet) error {
+func (c2sc *WebSocketConnection) enqueueSendPacket(pk ws_packet.Packet) error {
 	golog.GlobalLogger.Debug("enqueue %v", pk)
 	trycount := 10
 	for trycount > 0 {

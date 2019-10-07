@@ -19,10 +19,10 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/kasworld/bufferpool"
-	"github.com/kasworld/wasmwebsocket/wspacket"
+	"github.com/kasworld/wasmwebsocket/protocol/ws_packet"
 )
 
-var pBufferPool = bufferpool.New("PacketBufferPool", wspacket.MaxPacketLen, 100)
+var pBufferPool = bufferpool.New("PacketBufferPool", ws_packet.MaxPacketLen, 100)
 
 func SendControl(
 	wsConn *websocket.Conn, mt int, PacketWriteTimeOut time.Duration) error {
@@ -36,9 +36,9 @@ func SendPacket(wsConn *websocket.Conn, sendBuffer []byte) error {
 
 func SendLoop(sendRecvCtx context.Context, SendRecvStop func(), wsConn *websocket.Conn,
 	timeout time.Duration,
-	SendCh chan wspacket.Packet,
+	SendCh chan ws_packet.Packet,
 	marshalBodyFn func(body interface{}, oldBuffToAppend []byte) ([]byte, byte, error),
-	handleSentPacketFn func(header wspacket.Header) error,
+	handleSentPacketFn func(header ws_packet.Header) error,
 ) error {
 
 	defer SendRecvStop()
@@ -54,7 +54,7 @@ loop:
 				break loop
 			}
 			var sendBuffer []byte
-			sendBuffer, err := wspacket.Packet2Bytes(&pk, marshalBodyFn)
+			sendBuffer, err := ws_packet.Packet2Bytes(&pk, marshalBodyFn)
 			if err != nil {
 				break loop
 			}
@@ -71,7 +71,7 @@ loop:
 
 func RecvLoop(sendRecvCtx context.Context, SendRecvStop func(), wsConn *websocket.Conn,
 	timeout time.Duration,
-	HandleRecvPacketFn func(header wspacket.Header, body []byte) error) error {
+	HandleRecvPacketFn func(header ws_packet.Header, body []byte) error) error {
 
 	defer SendRecvStop()
 	var err error
@@ -100,13 +100,13 @@ loop:
 	return err
 }
 
-func RecvPacket(wsConn *websocket.Conn) (wspacket.Header, []byte, error) {
+func RecvPacket(wsConn *websocket.Conn) (ws_packet.Header, []byte, error) {
 	mt, rdata, err := wsConn.ReadMessage()
 	if err != nil {
-		return wspacket.Header{}, nil, err
+		return ws_packet.Header{}, nil, err
 	}
 	if mt != websocket.BinaryMessage {
-		return wspacket.Header{}, nil, fmt.Errorf("message not binary %v", mt)
+		return ws_packet.Header{}, nil, fmt.Errorf("message not binary %v", mt)
 	}
-	return wspacket.NewRecvPacketBufferByData(rdata).GetHeaderBody()
+	return ws_packet.NewRecvPacketBufferByData(rdata).GetHeaderBody()
 }
