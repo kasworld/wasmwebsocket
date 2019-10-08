@@ -136,14 +136,14 @@ func main() {
 	buf, err = buildPacket(*prefix)
 	saveTo(buf, err, path.Join(*basedir, *prefix+"_packet", "packet_gen.go"))
 
+	buf, err = buildObjTemplate(*prefix, cmddata, notidata)
+	saveTo(buf, err, path.Join(*basedir, *prefix+"_obj", "objtemplate_gen.go"))
+
 	buf, err = buildMSGP(*prefix, cmddata, notidata)
 	saveTo(buf, err, path.Join(*basedir, *prefix+"_msgp", "serialize_gen.go"))
 
 	buf, err = buildJSON(*prefix, cmddata, notidata)
 	saveTo(buf, err, path.Join(*basedir, *prefix+"_json", "serialize_gen.go"))
-
-	buf, err = buildDemuxReq2API(*prefix, cmddata, notidata)
-	saveTo(buf, err, path.Join(*basedir, *prefix+"_server", "demuxreq2api_gen.go"))
 
 	buf, err = buildRecvRspFnMap(*prefix, cmddata, notidata)
 	saveTo(buf, err, path.Join(*basedir, *prefix+"_client", "recvrspobjfnmap_gen.go"))
@@ -154,8 +154,8 @@ func main() {
 	buf, err = buildClientSendRecv(*prefix, cmddata, notidata)
 	saveTo(buf, err, path.Join(*basedir, *prefix+"_client", "callsendrecv_gen.go"))
 
-	buf, err = buildObjTemplate(*prefix, cmddata, notidata)
-	saveTo(buf, err, path.Join(*basedir, *prefix+"_obj", "objtemplate_gen.go"))
+	buf, err = buildDemuxReq2API(*prefix, cmddata, notidata)
+	saveTo(buf, err, path.Join(*basedir, *prefix+"_server", "demuxreq2api_gen.go"))
 
 	buf, err = buildAPITemplate(*prefix, cmddata, notidata)
 	saveTo(buf, err, path.Join(*basedir, *prefix+"_server", "apitemplate_gen.go"))
@@ -167,7 +167,7 @@ func buildDataCode(pkgname string, enumtype string, data [][]string) (*bytes.Buf
 	fmt.Fprintf(&buf, `
 		package %[1]s
 		import "fmt"
-		type %v uint16
+		type %v uint16 // use in packet header, DO NOT CHANGE
 	`, pkgname, enumtype)
 
 	fmt.Fprintf(&buf, "const (\n")
@@ -384,38 +384,6 @@ func buildJSON(prefix string, cmddata, notidata [][]string) (*bytes.Buffer, erro
 	return &buf, nil
 }
 
-func buildDemuxReq2API(prefix string, cmddata, notidata [][]string) (*bytes.Buffer, error) {
-	var buf bytes.Buffer
-	fmt.Fprintln(&buf, makeGenComment())
-	fmt.Fprintf(&buf, `
-		package %[1]s_server
-		import (
-			"fmt"
-		)`, prefix)
-
-	fmt.Fprintf(&buf,
-		"\nvar DemuxReq2APIFnMap = [...]func(c *ServeClientConn, header %[1]s_packet.Header, robj interface{}) (interface{},%[1]s_error.ErrorCode, error){\n",
-		prefix)
-	for _, f := range cmddata {
-		fmt.Fprintf(&buf, "%[1]s_idcmd.%[2]s: Req2API_%[2]s,\n", prefix, f[0])
-	}
-	fmt.Fprintf(&buf, "\n}   // DemuxReq2APIFnMap\n")
-
-	for _, f := range cmddata {
-		fmt.Fprintf(&buf, `
-		func Req2API_%[2]s(c *ServeClientConn, header %[1]s_packet.Header, robj interface{}) (interface{},%[1]s_error.ErrorCode, error) {
-		req, ok := robj.(*%[1]s_obj.Req%[2]s_data)
-		if !ok {
-			return nil,0, fmt.Errorf("Packet type miss match %%v", robj)
-		}
-		rsp, err := apifn_Req%[2]s(c, req)
-		return rsp,rsp.Error, err
-		}
-		`, prefix, f[0])
-	}
-	return &buf, nil
-}
-
 func buildRecvRspFnMap(prefix string, cmddata, notidata [][]string) (*bytes.Buffer, error) {
 	var buf bytes.Buffer
 	fmt.Fprintln(&buf, makeGenComment())
@@ -485,13 +453,12 @@ func buildClientSendRecv(prefix string, cmddata, notidata [][]string) (*bytes.Bu
 		package %[1]s_client
 
 		type C2SConnectI interface {
-			CheckAPI(
-				cmd %[1]s_idcmd.CommandID,
-				errorcode %[1]s_error.ErrorCode) error
-		
 			SendRecv(
 				cmd %[1]s_idcmd.CommandID, body interface{}) (
-				%[1]s_idcmd.CommandID, interface{}, error)
+				%[1]s_packet.Header, interface{}, error)
+		
+			CheckAPI(hd %[1]s_packet.Header) error
+	
 		}
 		
 		`, prefix)
@@ -502,14 +469,14 @@ func buildClientSendRecv(prefix string, cmddata, notidata [][]string) (*bytes.Bu
 				if arg == nil {
 					arg = &%[1]s_obj.Req%[2]s_data{}
 				}
-				cmd, rsp, err := c2sc.SendRecv(
+				hd, rsp, err := c2sc.SendRecv(
 					%[1]s_idcmd.%[2]s,
 					arg)
 				if err != nil {
 					return nil, err
 				}
 				robj := rsp.(*%[1]s_obj.Rsp%[2]s_data)
-				return robj, c2sc.CheckAPI(cmd, robj.Error)
+				return robj, c2sc.CheckAPI(hd)
 			}
 			`, prefix, f[0])
 	}
@@ -550,7 +517,7 @@ func buildPacket(prefix string) (*bytes.Buffer, error) {
 		MaxBodyLen = 0xfffff
 
 		// HeaderLen fixed size of header
-		HeaderLen = 4 + 4 + 2 + 1 + 1 + 4
+		HeaderLen = 4 + 4 + 2 + 2 + 1 + 1 + 2
 
 		// MaxPacketLen max total packet size byte of raw packet
 		MaxPacketLen = HeaderLen + MaxBodyLen
@@ -566,68 +533,85 @@ func buildPacket(prefix string) (*bytes.Buffer, error) {
 		Body   interface{}
 	}
 
-	// Header is fixed size header of packet
-	type Header struct {
-		bodyLen  uint32   // set at marshal(Packet2Bytes)
-		ID       uint32   // sender set, unique id per packet (wrap around reuse)
-		Cmd      uint16   // sender set, application demux received packet
-		FlowType FlowType // sender set, flow control, Request, Response, Notification
-		bodyType byte     // set at marshal(Packet2Bytes), body compress, marshal type
-		Fill     uint32   // sender set, any data
+	func (h Header) String() string {
+		switch h.FlowType {
+		default:
+			return fmt.Sprintf(
+				"Header[%%v:%%v ID:%%v Error:%%v bodyLen:%%v Compress:%%v Fill:%%v]",
+				h.FlowType, h.Cmd, h.ID, h.ErrorCode, h.bodyLen, h.bodyType, h.Fill)
+		case invalid:
+			return fmt.Sprintf(
+				"Header[%%v:%%v ID:%%v Error:%%v bodyLen:%%v Compress:%%v Fill:%%v]",
+				h.FlowType, h.Cmd, h.ID, h.ErrorCode, h.bodyLen, h.bodyType, h.Fill)
+		case Request:
+			return fmt.Sprintf(
+				"Header[%%v:%%v ID:%%v Error:%%v bodyLen:%%v Compress:%%v Fill:%%v]",
+				h.FlowType, c2t_idcmd.CommandID(h.Cmd), h.ID, h.ErrorCode, h.bodyLen, h.bodyType, h.Fill)
+		case Response:
+			return fmt.Sprintf(
+				"Header[%%v:%%v ID:%%v Error:%%v bodyLen:%%v Compress:%%v Fill:%%v]",
+				h.FlowType, c2t_idcmd.CommandID(h.Cmd), h.ID, h.ErrorCode, h.bodyLen, h.bodyType, h.Fill)
+		case Notification:
+			return fmt.Sprintf(
+				"Header[%%v:%%v ID:%%v Error:%%v bodyLen:%%v Compress:%%v Fill:%%v]",
+				h.FlowType, c2t_idnoti.NotiID(h.Cmd), h.ID, h.ErrorCode, h.bodyLen, h.bodyType, h.Fill)
+		}
 	}
 
+	// Header is fixed size header of packet
+	type Header struct {
+		bodyLen   uint32              // set at marshal(Packet2Bytes)
+		ID        uint32              // sender set, unique id per packet (wrap around reuse)
+		Cmd       uint16              // sender set, application demux received packet
+		ErrorCode %[1]s_error.ErrorCode // sender set, Response error
+		FlowType  FlowType            // sender set, flow control, Request, Response, Notification
+		bodyType  byte                // set at marshal(Packet2Bytes), body compress, marshal type
+		Fill      uint16              // sender set, any data
+	}
+	
 	// MakeHeaderFromBytes unmarshal header from bytelist
 	func MakeHeaderFromBytes(buf []byte) Header {
 		var h Header
 		h.bodyLen = binary.LittleEndian.Uint32(buf[0:4])
 		h.ID = binary.LittleEndian.Uint32(buf[4:8])
 		h.Cmd = binary.LittleEndian.Uint16(buf[8:10])
-		h.FlowType = FlowType(buf[10])
-		h.bodyType = buf[11]
-		h.Fill = binary.LittleEndian.Uint32(buf[12:16])
+		h.ErrorCode = %[1]s_error.ErrorCode(binary.LittleEndian.Uint16(buf[10:12]))
+		h.FlowType = FlowType(buf[12])
+		h.bodyType = buf[13]
+		h.Fill = binary.LittleEndian.Uint16(buf[14:16])
 		return h
 	}
-
-	// GetBodyLenFromHeaderBytes return packet body len from bytelist of header
-	func GetBodyLenFromHeaderBytes(buf []byte) uint32 {
-		return binary.LittleEndian.Uint32(buf[0:4])
-	}
-
-	// ToByteList marshal header to bytelist
-	func (h Header) ToByteList() []byte {
-		buf := make([]byte, HeaderLen)
-		binary.LittleEndian.PutUint32(buf[0:4], h.bodyLen)
-		binary.LittleEndian.PutUint32(buf[4:8], h.ID)
-		binary.LittleEndian.PutUint16(buf[8:10], h.Cmd)
-		buf[10] = byte(h.FlowType)
-		buf[11] = h.bodyType
-		binary.LittleEndian.PutUint32(buf[12:16], h.Fill)
-		return buf
-	}
-
+		
 	func (h Header) toBytesAt(buf []byte) {
 		binary.LittleEndian.PutUint32(buf[0:4], h.bodyLen)
 		binary.LittleEndian.PutUint32(buf[4:8], h.ID)
 		binary.LittleEndian.PutUint16(buf[8:10], h.Cmd)
-		buf[10] = byte(h.FlowType)
-		buf[11] = h.bodyType
-		binary.LittleEndian.PutUint32(buf[12:16], h.Fill)
+		binary.LittleEndian.PutUint16(buf[10:12], uint16(h.ErrorCode))
+		buf[12] = byte(h.FlowType)
+		buf[13] = h.bodyType
+		binary.LittleEndian.PutUint16(buf[14:16], h.Fill)
 	}
-
+	
+	// ToByteList marshal header to bytelist
+	func (h Header) ToByteList() []byte {
+		buf := make([]byte, HeaderLen)
+		h.toBytesAt(buf)
+		return buf
+	}
+	
+	// GetBodyLenFromHeaderBytes return packet body len from bytelist of header
+	func GetBodyLenFromHeaderBytes(buf []byte) uint32 {
+		return binary.LittleEndian.Uint32(buf[0:4])
+	}
+	
 	// BodyLen return bodylen field
 	func (h *Header) BodyLen() uint32 {
 		return h.bodyLen
 	}
-
+	
 	// BodyType return bodyType field
 	func (h *Header) BodyType() byte {
 		return h.bodyType
-	}
-
-	func (h Header) String() string {
-		return fmt.Sprintf(
-			"Header[%%d:%%d ID:%%d bodyLen:%%d Compress:%%v Fill:%%d]",
-			h.FlowType, h.Cmd, h.ID, h.bodyLen, h.bodyType, h.Fill)
 	}
 
 	///////////////////////////////////////////////////////////////////////////////
@@ -766,7 +750,7 @@ func buildObjTemplate(prefix string, cmddata, notidata [][]string) (*bytes.Buffe
 			Dummy uint8
 		}
 		type Rsp%[2]s_data struct {
-			Error %[1]s_error.ErrorCode
+			Dummy uint8
 		}
 		`, prefix, f[0])
 	}
@@ -782,6 +766,42 @@ func buildObjTemplate(prefix string, cmddata, notidata [][]string) (*bytes.Buffe
 	return &buf, nil
 }
 
+func buildDemuxReq2API(prefix string, cmddata, notidata [][]string) (*bytes.Buffer, error) {
+	var buf bytes.Buffer
+	fmt.Fprintln(&buf, makeGenComment())
+	fmt.Fprintf(&buf, `
+		package %[1]s_server
+		import (
+			"fmt"
+		)`, prefix)
+
+	fmt.Fprintf(&buf, `
+		var DemuxReq2APIFnMap = [...]func(
+		c *ServeClientConn, hd %[1]s_packet.Header, robj interface{}) (
+		%[1]s_packet.Header, interface{}, error){
+		`, prefix)
+	for _, f := range cmddata {
+		fmt.Fprintf(&buf, "%[1]s_idcmd.%[2]s: Req2API_%[2]s,\n", prefix, f[0])
+	}
+	fmt.Fprintf(&buf, "\n}   // DemuxReq2APIFnMap\n")
+
+	for _, f := range cmddata {
+		fmt.Fprintf(&buf, `
+		func Req2API_%[2]s(
+			c *ServeClientConn, hd %[1]s_packet.Header, robj interface{}) (
+			%[1]s_packet.Header, interface{},  error) {
+		req, ok := robj.(*%[1]s_obj.Req%[2]s_data)
+		if !ok {
+			return hd, nil, fmt.Errorf("Packet type miss match %%v", robj)
+		}
+		rhd, rsp, err := apifn_Req%[2]s(c, hd, req)
+		return rhd, rsp, err
+		}
+		`, prefix, f[0])
+	}
+	return &buf, nil
+}
+
 func buildAPITemplate(prefix string, cmddata, notidata [][]string) (*bytes.Buffer, error) {
 	var buf bytes.Buffer
 	fmt.Fprintln(&buf, makeGenComment())
@@ -792,11 +812,15 @@ func buildAPITemplate(prefix string, cmddata, notidata [][]string) (*bytes.Buffe
 
 	for _, f := range cmddata {
 		fmt.Fprintf(&buf, `
-		func apifn_Req%[2]s(c2sc *ServeClientConn, robj *%[1]s_obj.Req%[2]s_data) (*%[1]s_obj.Rsp%[2]s_data, error) {
-			spacket := &%[1]s_obj.Rsp%[2]s_data{
-				Error: %[1]s_error.Disconnect,
+		func apifn_Req%[2]s(
+			c2sc *ServeClientConn, hd %[1]s_packet.Header, robj *%[1]s_obj.Req%[2]s_data) (
+			%[1]s_packet.Header, *%[1]s_obj.Rsp%[2]s_data, error) {
+			rhd := %[1]s_packet.Header{
+				ErrorCode : %[1]s_error.None,
 			}
-			return spacket, nil
+			spacket := &%[1]s_obj.Rsp%[2]s_data{
+			}
+			return rhd, spacket, nil
 		}
 		`, prefix, f[0])
 	}
