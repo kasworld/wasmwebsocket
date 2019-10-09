@@ -9,15 +9,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package wasmwsconnection
+package ws_wasmconn
 
 import (
 	"context"
 	"fmt"
 	"syscall/js"
 
-	"github.com/kasworld/wasmwebsocket/jslog"
-	"github.com/kasworld/wasmwebsocket/logdur"
 	"github.com/kasworld/wasmwebsocket/protocol/ws_packet"
 )
 
@@ -57,8 +55,6 @@ func New(
 }
 
 func (wsc *Connection) Connect() error {
-	defer fmt.Printf("end %v\n", logdur.New("ConnectTo"))
-
 	wsc.conn = js.Global().Get("WebSocket").New(wsc.remoteAddr)
 	if wsc.conn == js.Null() {
 		err := fmt.Errorf("fail to connect %v", wsc.remoteAddr)
@@ -81,18 +77,17 @@ func (wsc *Connection) wsOpened(this js.Value, args []js.Value) interface{} {
 
 func (wsc *Connection) wsClosed(this js.Value, args []js.Value) interface{} {
 	wsc.sendRecvStop()
-	jslog.Error("ws closed")
+	JsLogError("ws closed")
 	return nil
 }
 
 func (wsc *Connection) wsError(this js.Value, args []js.Value) interface{} {
 	wsc.sendRecvStop()
-	jslog.Error(this, args)
+	JsLogError(this, args)
 	return nil
 }
 
 func (wsc *Connection) sendLoop(sendRecvCtx context.Context) {
-	defer fmt.Printf("end %v\n", logdur.New("sendLoop"))
 	defer wsc.sendRecvStop()
 	var err error
 loop:
@@ -119,8 +114,6 @@ loop:
 }
 
 func (wsc *Connection) sendPacket(sendBuffer []byte) error {
-	defer fmt.Printf("end %v\n", logdur.New("sendPacket"))
-
 	sendData := js.Global().Get("Uint8Array").New(len(sendBuffer))
 	js.CopyBytesToJS(sendData, sendBuffer)
 	wsc.conn.Call("send", sendData)
@@ -129,8 +122,6 @@ func (wsc *Connection) sendPacket(sendBuffer []byte) error {
 }
 
 func (wsc *Connection) handleWebsocketMessage(this js.Value, args []js.Value) interface{} {
-	defer fmt.Printf("end %v\n", logdur.New("handleWebsocketMessage"))
-
 	data := args[0].Get("data") // blob
 	aBuff := data.Call("arrayBuffer")
 	aBuff.Call("then",
@@ -167,7 +158,6 @@ func ArrayBufferToSlice(value js.Value) []byte {
 }
 
 func (wsc *Connection) EnqueueSendPacket(pk ws_packet.Packet) error {
-	defer fmt.Printf("end %v\n", logdur.New("EnqueueSendPacket"))
 	select {
 	case wsc.sendCh <- pk:
 		return nil
@@ -175,3 +165,27 @@ func (wsc *Connection) EnqueueSendPacket(pk ws_packet.Packet) error {
 		return fmt.Errorf("Send channel full %v", wsc)
 	}
 }
+
+/////////
+
+func JsLogError(v ...interface{}) {
+	js.Global().Get("console").Call("error", v...)
+}
+
+/*
+func JsLogWarn(v ...interface{}) {
+	js.Global().Get("console").Call("warn", v...)
+}
+
+func JsLogDebug(v ...interface{}) {
+	js.Global().Get("console").Call("debug", v...)
+}
+
+func JsLogInfo(v ...interface{}) {
+	js.Global().Get("console").Call("info", v...)
+}
+
+func JsLogLog(v ...interface{}) {
+	js.Global().Get("console").Call("log", v...)
+}
+*/

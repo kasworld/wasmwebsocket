@@ -18,11 +18,8 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/kasworld/bufferpool"
 	"github.com/kasworld/wasmwebsocket/protocol/ws_packet"
 )
-
-var pBufferPool = bufferpool.New("PacketBufferPool", ws_packet.MaxPacketLen, 100)
 
 func SendControl(
 	wsConn *websocket.Conn, mt int, PacketWriteTimeOut time.Duration) error {

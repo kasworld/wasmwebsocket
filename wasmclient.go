@@ -18,13 +18,11 @@ import (
 	"syscall/js"
 	"time"
 
-	"github.com/kasworld/wasmwebsocket/protocol/ws_obj"
-
 	"github.com/kasworld/wasmwebsocket/protocol/ws_idcmd"
-
 	"github.com/kasworld/wasmwebsocket/protocol/ws_json"
+	"github.com/kasworld/wasmwebsocket/protocol/ws_obj"
 	"github.com/kasworld/wasmwebsocket/protocol/ws_packet"
-	"github.com/kasworld/wasmwebsocket/wasmwsconnection"
+	"github.com/kasworld/wasmwebsocket/protocol/ws_wasmconn"
 )
 
 var done chan struct{}
@@ -35,7 +33,7 @@ func main() {
 }
 
 type App struct {
-	wsc      *wasmwsconnection.Connection
+	wsc      *ws_wasmconn.Connection
 	lasttime time.Time
 	pid      uint32
 }
@@ -43,7 +41,7 @@ type App struct {
 func InitApp() {
 	dst := "ws://localhost:8080/ws"
 	app := App{}
-	app.wsc = wasmwsconnection.New(dst, ws_json.MarshalBodyFn, handleRecvPacket, handleSentPacket)
+	app.wsc = ws_wasmconn.New(dst, ws_json.MarshalBodyFn, handleRecvPacket, handleSentPacket)
 	err := app.wsc.Connect()
 	fmt.Printf("%v %v", dst, err)
 	js.Global().Call("requestAnimationFrame", js.FuncOf(app.jsFrame))
