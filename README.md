@@ -14,8 +14,14 @@ golang websocket server
 golang websocket용 
 github.com/gorilla/websocket
 
-log 용
-github.com/kasworld/log 
+
+## log 생성 및 사용  
+https://github.com/kasworld/log
+을 사용해서 log level 함수를 생성합니다. 
+
+go get github.com/kasworld/log 
+
+로 loggen을 설치하는 것이 필요합니다. 
 
 ## genprotocol 을 사용한 protocol 코드 생성 
 https://github.com/kasworld/genprotocol
