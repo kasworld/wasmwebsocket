@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-go run genprotocol.go -ver=1.0 \
+genprotocol -ver=1.0 \
     -basedir=. \
     -prefix=ws
 goimports -w ws_packet/packet_gen.go

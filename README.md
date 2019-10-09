@@ -16,3 +16,11 @@ github.com/gorilla/websocket
 
 log 용
 github.com/kasworld/log 
+
+## genprotocol 을 사용한 protocol 코드 생성 
+https://github.com/kasworld/genprotocol
+을 사용해서 protocol의 기반 코드를 생성합니다. 
+
+go get github.com/kasworld/genprotocol
+
+으로 genprotocol 을 설치 하는 것이 필요합니다.  
