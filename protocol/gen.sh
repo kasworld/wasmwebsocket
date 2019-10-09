@@ -10,3 +10,4 @@ goimports -w ws_server/demuxreq2api_gen.go
 goimports -w ws_client/recvrspobjfnmap_gen.go
 goimports -w ws_client/recvnotiobjfnmap_gen.go
 goimports -w ws_client/callsendrecv_gen.go
+goimports -w ws_wasmconn/wasmconn_gen.go

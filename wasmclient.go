@@ -14,10 +14,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"sync"
 	"syscall/js"
 	"time"
 
+	"github.com/kasworld/goguelike2/webclient/jslog"
 	"github.com/kasworld/wasmwebsocket/protocol/ws_idcmd"
 	"github.com/kasworld/wasmwebsocket/protocol/ws_json"
 	"github.com/kasworld/wasmwebsocket/protocol/ws_obj"
@@ -42,7 +45,20 @@ func InitApp() {
 	dst := "ws://localhost:8080/ws"
 	app := App{}
 	app.wsc = ws_wasmconn.New(dst, ws_json.MarshalBodyFn, handleRecvPacket, handleSentPacket)
-	err := app.wsc.Connect()
+
+	var err error
+	ctx := context.Background()
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		err = app.wsc.Connect(ctx, &wg)
+	}()
+	wg.Wait()
+	if err != nil {
+		jslog.Errorf("ws_wasmconn.Connect err %v", err)
+		return
+	}
+
 	fmt.Printf("%v %v", dst, err)
 	js.Global().Call("requestAnimationFrame", js.FuncOf(app.jsFrame))
 	app.displayFrame()
