@@ -24,9 +24,9 @@ import (
 	"github.com/kasworld/wasmwebsocket/golog"
 	"github.com/kasworld/wasmwebsocket/protocol/ws_idcmd"
 	"github.com/kasworld/wasmwebsocket/protocol/ws_json"
+	"github.com/kasworld/wasmwebsocket/protocol/ws_loopwsgorilla"
 	"github.com/kasworld/wasmwebsocket/protocol/ws_obj"
 	"github.com/kasworld/wasmwebsocket/protocol/ws_packet"
-	"github.com/kasworld/wasmwebsocket/protocol/ws_wsgorilla"
 )
 
 // service const
@@ -112,14 +112,14 @@ func (c2sc *WebSocketConnection) ConnectWebSocket(mainctx context.Context) {
 	c2sc.sendRecvStop = sendRecvCancel
 
 	go func() {
-		err := ws_wsgorilla.RecvLoop(sendRecvCtx, c2sc.sendRecvStop, wsConn,
+		err := ws_loopwsgorilla.RecvLoop(sendRecvCtx, c2sc.sendRecvStop, wsConn,
 			PacketReadTimeoutSec, c2sc.HandleRecvPacket)
 		if err != nil {
 			golog.GlobalLogger.Error("end RecvLoop %v", err)
 		}
 	}()
 	go func() {
-		err := ws_wsgorilla.SendLoop(sendRecvCtx, c2sc.sendRecvStop, wsConn,
+		err := ws_loopwsgorilla.SendLoop(sendRecvCtx, c2sc.sendRecvStop, wsConn,
 			PacketWriteTimeoutSec, c2sc.sendCh,
 			ws_json.MarshalBodyFn, c2sc.handleSentPacket)
 		if err != nil {
