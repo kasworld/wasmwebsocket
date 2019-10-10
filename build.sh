@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
 
-echo "gen log"
-loggen -leveldatafile gologlevel.data -packagename golog 
+echo "genenerate log"
+genlog -leveldatafile gologlevel.data -packagename golog 
 
 cd protocol 
 ./gen.sh
