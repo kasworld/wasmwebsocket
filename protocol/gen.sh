@@ -12,3 +12,4 @@ goimports -w ws_client/recvnotiobjfnmap_gen.go
 goimports -w ws_client/callsendrecv_gen.go
 goimports -w ws_wasmconn/wasmconn_gen.go
 goimports -w ws_wsgorilla/wsgorilla_gen.go
+goimports -w ws_tcploop/tcploop_gen.go
