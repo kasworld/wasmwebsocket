@@ -21,11 +21,11 @@ import (
 	"time"
 
 	"github.com/kasworld/goguelike2/webclient/jslog"
+	"github.com/kasworld/wasmwebsocket/protocol/ws_connwasm"
 	"github.com/kasworld/wasmwebsocket/protocol/ws_idcmd"
 	"github.com/kasworld/wasmwebsocket/protocol/ws_json"
 	"github.com/kasworld/wasmwebsocket/protocol/ws_obj"
 	"github.com/kasworld/wasmwebsocket/protocol/ws_packet"
-	"github.com/kasworld/wasmwebsocket/protocol/ws_wasmconn"
 )
 
 var done chan struct{}
@@ -36,7 +36,7 @@ func main() {
 }
 
 type App struct {
-	wsc      *ws_wasmconn.Connection
+	wsc      *ws_connwasm.Connection
 	lasttime time.Time
 	pid      uint32
 }
@@ -44,7 +44,7 @@ type App struct {
 func InitApp() {
 	dst := "ws://localhost:8080/ws"
 	app := App{}
-	app.wsc = ws_wasmconn.New(dst, ws_json.MarshalBodyFn, handleRecvPacket, handleSentPacket)
+	app.wsc = ws_connwasm.New(dst, ws_json.MarshalBodyFn, handleRecvPacket, handleSentPacket)
 
 	var err error
 	ctx := context.Background()
@@ -55,7 +55,7 @@ func InitApp() {
 	}()
 	wg.Wait()
 	if err != nil {
-		jslog.Errorf("ws_wasmconn.Connect err %v", err)
+		jslog.Errorf("ws_connwasm.Connect err %v", err)
 		return
 	}
 
