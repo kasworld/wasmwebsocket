@@ -1,4 +1,4 @@
-package ws_server
+package ws_handlereq
 
 import (
 	"context"

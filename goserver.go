@@ -21,7 +21,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/kasworld/wasmwebsocket/golog"
-	"github.com/kasworld/wasmwebsocket/protocol/ws_server"
+	"github.com/kasworld/wasmwebsocket/protocol/ws_handlereq"
 )
 
 func main() {
@@ -65,7 +65,7 @@ func serveWebSocketClient(ctx context.Context, w http.ResponseWriter, r *http.Re
 	golog.GlobalLogger.Debug("Start serveWebSocketClient %v", r.RemoteAddr)
 	defer func() { golog.GlobalLogger.Debug("End serveWebSocketClient %v", r.RemoteAddr) }()
 
-	c2sc := ws_server.NewServeClientConn(r.RemoteAddr)
+	c2sc := ws_handlereq.NewServeClientConn(r.RemoteAddr)
 	c2sc.StartServeClientConn(ctx, wsConn)
 
 	// connected user play
