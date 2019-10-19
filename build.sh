@@ -9,6 +9,7 @@ genprotocol -ver=1.0 \
     -basedir=. \
     -prefix=ws
 
+
 goimports -w ws_version/version_gen.go
 goimports -w ws_idcmd/command_gen.go
 goimports -w ws_idnoti/noti_gen.go
@@ -17,11 +18,13 @@ goimports -w ws_packet/packet_gen.go
 goimports -w ws_obj/objtemplate_gen.go
 goimports -w ws_msgp/serialize_gen.go
 goimports -w ws_json/serialize_gen.go
-goimports -w ws_handlersp/recvrspobjfnmap_gen.go
-goimports -w ws_handlenoti/recvnotiobjfnmap_gen.go
+goimports -w ws_handlersp/fnobjtemplate_gen.go
+goimports -w ws_handlersp/fnbytestemplate_gen.go
+goimports -w ws_handlenoti/fnobjtemplate_gen.go
+goimports -w ws_handlenoti/fnbytestemplate_gen.go
 goimports -w ws_callsendrecv/callsendrecv_gen.go
-goimports -w ws_handlereq/recvreqobjfnmap_gen.go
-goimports -w ws_handlereq/apitemplate_gen.go
+goimports -w ws_handlereq/fnobjtemplate_gen.go
+goimports -w ws_handlereq/fnbytestemplate_gen.go
 goimports -w ws_conntcp/conntcp_gen.go
 goimports -w ws_connwasm/connwasm_gen.go
 goimports -w ws_connwsgorilla/connwsgorilla_gen.go

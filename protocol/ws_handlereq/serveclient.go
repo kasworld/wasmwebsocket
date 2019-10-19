@@ -86,17 +86,17 @@ func (c2sc *ServeClientConn) handleSentPacket(header ws_packet.Header) error {
 }
 
 func (c2sc *ServeClientConn) HandleRecvPacket(header ws_packet.Header, rbody []byte) error {
-	robj, err := ws_json.UnmarshalPacket(header, rbody)
-	if err != nil {
-		return err
-	}
+	// robj, err := ws_json.UnmarshalPacket(header, rbody)
+	// if err != nil {
+	// 	return err
+	// }
 	if header.FlowType != ws_packet.Request {
 		return fmt.Errorf("Unexpected header packet type: %v", header)
 	}
-	if int(header.Cmd) >= len(DemuxReq2APIFnMap) {
+	if int(header.Cmd) >= len(DemuxReq2BytesAPIFnMap) {
 		return fmt.Errorf("Invalid header command %v", header)
 	}
-	response, errcode, apierr := DemuxReq2APIFnMap[header.Cmd](c2sc, header, robj)
+	response, errcode, apierr := DemuxReq2BytesAPIFnMap[header.Cmd](c2sc, header, rbody)
 	if errcode != ws_error.Disconnect && apierr == nil {
 		rhd := header
 		rhd.FlowType = ws_packet.Response
