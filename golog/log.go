@@ -55,18 +55,3 @@ func init() {
 	GlobalLogger = New("", logflags.DefaultValue(false), LL_All)
 	GlobalLogger.AddDestination(LL_All, OutputStderr)
 }
-
-func SetLog(logdir string, loglevel LL_Type, splitLogLevel LL_Type) error {
-	if logdir != "" {
-		newlg, err := NewWithDstDir(
-			"", logdir, logflags.DefaultValue(false), loglevel, splitLogLevel,
-		)
-		if err != nil {
-			return err
-		}
-		GlobalLogger = newlg
-	} else {
-		GlobalLogger.SetLevel(loglevel)
-	}
-	return nil
-}
