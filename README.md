@@ -4,7 +4,7 @@
 
 genprotocol/example/rundriver 를 보세요.
 
-## old reamme
+## old readme
 
 golang wasm websocket 
 
