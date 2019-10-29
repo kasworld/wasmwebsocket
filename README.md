@@ -1,4 +1,11 @@
 # wasmwebsocket
+
+## [genprotocol](https://github.com/kasworld/genprotocol) 로 통합 되었습니다. 
+
+genprotocol/example/rundriver 를 보세요.
+
+## old reamme
+
 golang wasm websocket 
 
 goguelike2의 gopherjs webclient 를 go언에에서 (아직  EXPERIMENTAL 이라고 하지만) 정식으로 지원 하기 시작한 Webassembly 로 포팅하다가 나온 부산 물 입니다.
